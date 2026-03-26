@@ -1,0 +1,9 @@
+{
+  "name": "@evolve/initial-agent",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "task.ts",
+  "dependencies": {
+    "@evolve/core": "workspace:*"
+  }
+}

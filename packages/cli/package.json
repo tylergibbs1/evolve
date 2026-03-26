@@ -1,0 +1,15 @@
+{
+  "name": "@evolve/cli",
+  "version": "0.1.0",
+  "type": "module",
+  "bin": {
+    "evolve": "src/index.ts"
+  },
+  "dependencies": {
+    "@evolve/core": "workspace:*",
+    "commander": "^13.0.0"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  }
+}
