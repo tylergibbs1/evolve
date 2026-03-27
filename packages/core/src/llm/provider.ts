@@ -57,14 +57,12 @@ export async function runToolLoop(
     if (response.content) {
       assistantContent.push({ type: "text", text: response.content });
     }
-    for (const tc of response.toolCalls) {
-      assistantContent.push({
-        type: "tool_use",
-        id: tc.id,
-        name: tc.name,
-        input: tc.input,
-      });
-    }
+    assistantContent.push(...response.toolCalls.map(tc => ({
+      type: "tool_use" as const,
+      id: tc.id,
+      name: tc.name,
+      input: tc.input,
+    })));
     messages.push({ role: "assistant", content: assistantContent });
 
     // Execute all tool calls, collect results into a single user message
