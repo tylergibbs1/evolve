@@ -1,87 +1,26 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
-  <defs>
-    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#0f0f23"/>
-      <stop offset="100%" stop-color="#1a1a3e"/>
-    </linearGradient>
-    <linearGradient id="arc1" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#6366f1"/>
-      <stop offset="100%" stop-color="#8b5cf6"/>
-    </linearGradient>
-    <linearGradient id="arc2" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#8b5cf6"/>
-      <stop offset="100%" stop-color="#a78bfa"/>
-    </linearGradient>
-    <linearGradient id="arc3" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#a78bfa"/>
-      <stop offset="100%" stop-color="#c4b5fd"/>
-    </linearGradient>
-    <linearGradient id="core" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#818cf8"/>
-      <stop offset="100%" stop-color="#6366f1"/>
-    </linearGradient>
-    <linearGradient id="glow" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#c4b5fd" stop-opacity="0.3"/>
-      <stop offset="100%" stop-color="#6366f1" stop-opacity="0"/>
-    </linearGradient>
-  </defs>
-
-  <!-- Background -->
-  <rect width="512" height="512" rx="96" fill="url(#bg)"/>
-
-  <!-- Subtle radial glow behind center -->
-  <circle cx="256" cy="246" r="160" fill="url(#glow)"/>
-
-  <!-- Outer evolution ring (generation 3) - dashed, represents archive breadth -->
-  <circle cx="256" cy="246" r="155" fill="none" stroke="url(#arc3)" stroke-width="3" stroke-dasharray="12 8" opacity="0.5"/>
-
-  <!-- Middle evolution ring (generation 2) -->
-  <circle cx="256" cy="246" r="120" fill="none" stroke="url(#arc2)" stroke-width="4" stroke-dasharray="8 6" opacity="0.65"/>
-
-  <!-- Inner evolution ring (generation 1) -->
-  <circle cx="256" cy="246" r="85" fill="none" stroke="url(#arc1)" stroke-width="5" opacity="0.8"/>
-
-  <!-- Lineage arcs - showing parent->child connections in the archive tree -->
-  <!-- Branch 1: upward right -->
-  <path d="M 256 246 Q 310 190 340 150" fill="none" stroke="#818cf8" stroke-width="2.5" stroke-linecap="round" opacity="0.7"/>
-  <circle cx="340" cy="150" r="8" fill="#818cf8" opacity="0.8"/>
-  <path d="M 340 150 Q 370 120 390 105" fill="none" stroke="#a78bfa" stroke-width="2" stroke-linecap="round" opacity="0.5"/>
-  <circle cx="390" cy="105" r="5.5" fill="#a78bfa" opacity="0.6"/>
-
-  <!-- Branch 2: upward left -->
-  <path d="M 256 246 Q 200 195 170 160" fill="none" stroke="#818cf8" stroke-width="2.5" stroke-linecap="round" opacity="0.7"/>
-  <circle cx="170" cy="160" r="8" fill="#818cf8" opacity="0.8"/>
-  <path d="M 170 160 Q 140 135 125 115" fill="none" stroke="#a78bfa" stroke-width="2" stroke-linecap="round" opacity="0.5"/>
-  <circle cx="125" cy="115" r="5.5" fill="#a78bfa" opacity="0.6"/>
-  <path d="M 170 160 Q 155 130 160 100" fill="none" stroke="#a78bfa" stroke-width="2" stroke-linecap="round" opacity="0.5"/>
-  <circle cx="160" cy="100" r="5.5" fill="#a78bfa" opacity="0.6"/>
-
-  <!-- Branch 3: right -->
-  <path d="M 256 246 Q 320 240 365 220" fill="none" stroke="#818cf8" stroke-width="2.5" stroke-linecap="round" opacity="0.7"/>
-  <circle cx="365" cy="220" r="8" fill="#818cf8" opacity="0.8"/>
-
-  <!-- Branch 4: downward - the stepping stone path -->
-  <path d="M 256 246 Q 230 300 215 335" fill="none" stroke="#818cf8" stroke-width="2.5" stroke-linecap="round" opacity="0.7"/>
-  <circle cx="215" cy="335" r="7" fill="#818cf8" opacity="0.6"/>
-  <path d="M 215 335 Q 240 360 280 355" fill="none" stroke="#a78bfa" stroke-width="2" stroke-linecap="round" opacity="0.5"/>
-  <circle cx="280" cy="355" r="5.5" fill="#a78bfa" opacity="0.6"/>
-
-  <!-- Branch 5: lower right -->
-  <path d="M 256 246 Q 310 290 340 320" fill="none" stroke="#818cf8" stroke-width="2.5" stroke-linecap="round" opacity="0.7"/>
-  <circle cx="340" cy="320" r="7" fill="#818cf8" opacity="0.6"/>
-
-  <!-- Self-referential loop (metacognition) - the key differentiator -->
-  <path d="M 272 230 C 310 210 320 250 290 260 C 260 270 265 235 272 230"
-        fill="none" stroke="#c4b5fd" stroke-width="2.5" stroke-linecap="round" opacity="0.8"/>
-  <!-- Arrow on the loop -->
-  <polygon points="270,228 278,224 274,234" fill="#c4b5fd" opacity="0.8"/>
-
-  <!-- Core node (initial agent / current best) -->
-  <circle cx="256" cy="246" r="28" fill="url(#core)" opacity="0.95"/>
-  <circle cx="256" cy="246" r="22" fill="#0f0f23" opacity="0.6"/>
-  <circle cx="256" cy="246" r="14" fill="url(#core)" opacity="0.9"/>
-
-  <!-- Title -->
-  <text x="256" y="435" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif" font-weight="700" font-size="52" fill="#e0e7ff" letter-spacing="8">EVOLVE</text>
-  <text x="256" y="462" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif" font-weight="400" font-size="14" fill="#a5b4fc" letter-spacing="4" opacity="0.7">SELF-IMPROVING AGENTS</text>
+  <!--
+    Evolve logo: A single continuous stroke forming a spiral
+    that loops back into itself — self-improvement as a symbol.
+    Minimal, monochrome, geometric.
+  -->
+  <rect width="512" height="512" rx="108" fill="#0A0A0A"/>
+  <g transform="translate(256,256)">
+    <!-- Outer arc: open circle with a gap -->
+    <path
+      d="M 0,-120 A 120,120 0 1,1 -84,-84"
+      fill="none"
+      stroke="white"
+      stroke-width="28"
+      stroke-linecap="round"
+    />
+    <!-- Inner spiral arm curving inward from the gap -->
+    <path
+      d="M -84,-84 C -40,-40 -60,10 -10,10 C 40,10 50,-40 20,-65"
+      fill="none"
+      stroke="white"
+      stroke-width="28"
+      stroke-linecap="round"
+    />
+  </g>
 </svg>
