@@ -56,6 +56,7 @@ async function evaluateDomain(
 
   let evaluatedCount = 0;
   let totalScore = 0;
+  const caseResults: Array<{ id: string; score: number }> = [];
 
   for (let stageIdx = 0; stageIdx < config.stages.length; stageIdx++) {
     const stage = config.stages[stageIdx]!;
@@ -81,13 +82,16 @@ async function evaluateDomain(
 
     // Evaluate each case in this stage
     for (const evalCase of stageCases) {
+      let caseScore: number;
       try {
         const output = await runTask(evalCase, domain.name);
-        const caseScore = await domain.scorer(output, evalCase);
+        caseScore = await domain.scorer(output, evalCase);
         totalScore += caseScore;
       } catch {
-        totalScore += config.defaultScore;
+        caseScore = config.defaultScore;
+        totalScore += caseScore;
       }
+      caseResults.push({ id: evalCase.id, score: caseScore });
       evaluatedCount++;
     }
 
@@ -131,6 +135,21 @@ async function evaluateDomain(
     validationScore = valTotal / domain.validationCases.length;
   }
 
+  // Build per-case feedback string for the meta agent
+  const failed = caseResults.filter((r) => r.score < 1);
+  const passed = caseResults.filter((r) => r.score >= 1);
+  const feedbackLines: string[] = [];
+  if (failed.length > 0) {
+    feedbackLines.push(
+      `Failed cases (${failed.length}/${caseResults.length}): ${failed.map((r) => `${r.id}=${r.score.toFixed(2)}`).join(", ")}`,
+    );
+  }
+  if (passed.length > 0) {
+    feedbackLines.push(
+      `Passed cases (${passed.length}/${caseResults.length}): ${passed.map((r) => r.id).join(", ")}`,
+    );
+  }
+
   return {
     score: {
       domain: domain.name,
@@ -141,6 +160,7 @@ async function evaluateDomain(
     feedback: {
       domain: domain.name,
       score: validationScore ?? trainScore,
+      feedback: feedbackLines.length > 0 ? feedbackLines.join(". ") : undefined,
     },
   };
 }
