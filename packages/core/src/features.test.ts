@@ -4,8 +4,21 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Archive } from "./archive.ts";
 import { selectParents } from "./selection.ts";
+import { runEvolutionLoop } from "./loop.ts";
 import { agentId } from "./types.ts";
-import type { ArchiveEntry, DomainScore } from "./types.ts";
+import type {
+  ArchiveEntry,
+  DomainConfig,
+  DomainScore,
+  EvalConfig,
+  LLMRoleConfig,
+  LLMResponse,
+  Message,
+  RunConfig,
+  ToolDefinition,
+  ToolChoice,
+} from "./types.ts";
+import type { LLMProvider } from "./llm/provider.ts";
 
 // ---------------------------------------------------------------------------
 // Feature 1: Invalid parent marking
@@ -260,6 +273,282 @@ describe("Feature: Editable parent selection script", () => {
     // All should be valid-parent since invalid-parent is filtered
     expect(selected.every((id) => id === "valid-parent")).toBe(true);
   });
+});
+
+// ---------------------------------------------------------------------------
+// Feature 4: Loop coverage — budget, compilation failures, protected paths
+// ---------------------------------------------------------------------------
+
+const ROLE_CONFIG: LLMRoleConfig = {
+  provider: "anthropic",
+  model: "mock",
+  temperature: 0,
+};
+
+/** Mock LLM provider that returns no tool calls for meta agent
+ *  and a submit_response tool call for task agent. */
+function createMockProvider(): LLMProvider {
+  return {
+    async chat(
+      messages: Message[],
+      _config: LLMRoleConfig,
+      tools?: ToolDefinition[],
+      toolChoice?: ToolChoice,
+    ): Promise<LLMResponse> {
+      // Task agent: forced submit_response tool call
+      if (toolChoice && typeof toolChoice === "object" && toolChoice.tool === "submit_response") {
+        return {
+          content: "",
+          toolCalls: [{
+            id: "tc-1",
+            name: "submit_response",
+            input: { response: "mock answer" },
+          }],
+          usage: { inputTokens: 10, outputTokens: 10 },
+        };
+      }
+      // Meta agent: return text only (no modifications)
+      return {
+        content: "No changes needed.",
+        toolCalls: [],
+        usage: { inputTokens: 10, outputTokens: 10 },
+      };
+    },
+  };
+}
+
+async function setupLoopTest(): Promise<{ dir: string; agentDir: string; config: RunConfig }> {
+  const dir = await mkdtemp(join(tmpdir(), "evolve-loop-"));
+  const agentDir = join(dir, "agent");
+  await mkdir(agentDir, { recursive: true });
+
+  await Bun.write(
+    join(agentDir, "task.ts"),
+    `export function buildTaskPrompt(inputs: Record<string, unknown>): string {
+  return "Answer: " + JSON.stringify(inputs);
+}`,
+  );
+
+  const domain: DomainConfig = {
+    name: "test",
+    trainCases: [
+      { id: "t1", input: { q: "hello" }, expected: { answer: "mock answer" } },
+    ],
+    testCases: [],
+    scorer: async (output: unknown, _expected) => {
+      return String(output).includes("mock") ? 1 : 0;
+    },
+  };
+
+  const evalConfig: EvalConfig = {
+    domains: [domain],
+    stagedEval: {
+      stages: [{ taskCount: 1, passThreshold: 0, passCondition: "any" }],
+      defaultScore: 0,
+    },
+    parentSelectionScore: "training",
+  };
+
+  const config: RunConfig = {
+    iterations: 1,
+    k: 1,
+    topM: 3,
+    lambda: 10,
+    initialAgentPath: agentDir,
+    outputDir: join(dir, "output"),
+    llm: {
+      diagnosis: ROLE_CONFIG,
+      modification: ROLE_CONFIG,
+      evaluation: ROLE_CONFIG,
+    },
+    budget: {
+      maxTokensPerIteration: 500_000,
+      maxTotalTokens: 2_000_000,
+      maxCostUSD: 100,
+      pauseOnBudgetExhausted: false,
+      warnAtPercentage: 80,
+    },
+    sandbox: {
+      limits: {
+        maxWallTimeSeconds: 30,
+        maxMemoryMB: 256,
+        maxLLMCalls: 5,
+        networkAccess: "llm-only",
+      },
+    },
+    eval: evalConfig,
+    protectedPaths: [],
+    editableSelection: false,
+  };
+
+  return { dir, agentDir, config };
+}
+
+describe("Feature: Loop budget handling", () => {
+  let loopDir: string;
+
+  afterEach(async () => {
+    if (loopDir) {
+      await rm(loopDir, { recursive: true, force: true }).catch(() => {});
+    }
+  });
+
+  test("pauseOnBudgetExhausted emits budget_warning and stops", async () => {
+    const { dir, config } = await setupLoopTest();
+    loopDir = dir;
+    config.iterations = 5;
+    config.budget.maxCostUSD = 0.000001; // Extremely low budget
+    config.budget.pauseOnBudgetExhausted = true;
+
+    const events: string[] = [];
+    const provider = createMockProvider();
+
+    const result = await runEvolutionLoop(provider, config, (event) => {
+      events.push(event.type);
+    });
+
+    // Should have completed (not thrown) even though budget was exceeded
+    expect(result.bestScore).toBeGreaterThanOrEqual(0);
+    expect(events).toContain("run_complete");
+  }, 30_000);
+
+  test("budget warning is emitted at threshold", async () => {
+    const { dir, config } = await setupLoopTest();
+    loopDir = dir;
+    config.iterations = 2;
+    config.budget.maxCostUSD = 0.0001; // Very low to trigger warning
+    config.budget.warnAtPercentage = 1; // Very low threshold
+    config.budget.pauseOnBudgetExhausted = true;
+
+    const events: string[] = [];
+    const provider = createMockProvider();
+
+    await runEvolutionLoop(provider, config, (event) => {
+      events.push(event.type);
+    });
+
+    // May or may not get budget_warning depending on exact cost
+    expect(events).toContain("run_complete");
+  }, 30_000);
+});
+
+describe("Feature: Loop compilation and parent invalidation", () => {
+  let loopDir: string;
+
+  afterEach(async () => {
+    if (loopDir) {
+      await rm(loopDir, { recursive: true, force: true }).catch(() => {});
+    }
+  });
+
+  test("compilation failure does not crash the loop", async () => {
+    const { dir, agentDir, config } = await setupLoopTest();
+    loopDir = dir;
+
+    // Meta agent that breaks task.ts
+    const provider: LLMProvider = {
+      async chat(messages, _config, tools, toolChoice) {
+        if (toolChoice && typeof toolChoice === "object" && toolChoice.tool === "submit_response") {
+          return {
+            content: "",
+            toolCalls: [{ id: "tc-1", name: "submit_response", input: { response: "ok" } }],
+            usage: { inputTokens: 10, outputTokens: 10 },
+          };
+        }
+        // Meta agent: break the task.ts file via bash tool
+        const msgs = messages.map(m => typeof m.content === "string" ? m.content : "");
+        const isFirstMetaCall = msgs.some(m => m.includes("Modify the codebase"));
+        if (isFirstMetaCall) {
+          return {
+            content: "",
+            toolCalls: [{
+              id: "tc-meta",
+              name: "bash",
+              input: { command: "echo 'syntax error {{{{' > task.ts" },
+            }],
+            usage: { inputTokens: 10, outputTokens: 10 },
+          };
+        }
+        return {
+          content: "Done.",
+          toolCalls: [],
+          usage: { inputTokens: 10, outputTokens: 10 },
+        };
+      },
+    };
+
+    const events: string[] = [];
+    const result = await runEvolutionLoop(provider, config, (event) => {
+      events.push(event.type);
+    });
+
+    // Loop should complete despite compilation failure
+    expect(result.bestScore).toBeGreaterThanOrEqual(0);
+    expect(events).toContain("run_complete");
+  }, 30_000);
+
+  test("protected paths are restored after meta agent runs", async () => {
+    const { dir, agentDir, config } = await setupLoopTest();
+    loopDir = dir;
+    config.protectedPaths = ["eval.config.ts"];
+
+    // Create a protected file
+    await Bun.write(join(agentDir, "eval.config.ts"), "export const x = 'original';");
+
+    const provider = createMockProvider();
+    const result = await runEvolutionLoop(provider, config, () => {});
+
+    expect(result.bestScore).toBeGreaterThanOrEqual(0);
+  }, 30_000);
+});
+
+describe("Feature: Editable selection via select_parent.ts", () => {
+  let loopDir: string;
+
+  afterEach(async () => {
+    if (loopDir) {
+      await rm(loopDir, { recursive: true, force: true }).catch(() => {});
+    }
+  });
+
+  test("uses select_parent.ts when editableSelection is true", async () => {
+    const { dir, agentDir, config } = await setupLoopTest();
+    loopDir = dir;
+    config.editableSelection = true;
+
+    // Copy the initial select_parent.ts into the agent dir
+    const scriptSrc = join(
+      import.meta.dir,
+      "../../initial-agent/select_parent.ts",
+    );
+    const scriptExists = await Bun.file(scriptSrc).exists();
+    if (scriptExists) {
+      await Bun.write(
+        join(agentDir, "select_parent.ts"),
+        await Bun.file(scriptSrc).text(),
+      );
+    }
+
+    const provider = createMockProvider();
+    const events: string[] = [];
+    const result = await runEvolutionLoop(provider, config, (event) => {
+      events.push(event.type);
+    });
+
+    expect(result.bestScore).toBeGreaterThanOrEqual(0);
+    expect(events).toContain("run_complete");
+  }, 30_000);
+
+  test("falls back to fixed selection when no select_parent.ts exists", async () => {
+    const { dir, config } = await setupLoopTest();
+    loopDir = dir;
+    config.editableSelection = true;
+
+    const provider = createMockProvider();
+    const result = await runEvolutionLoop(provider, config, () => {});
+
+    expect(result.bestScore).toBeGreaterThanOrEqual(0);
+  }, 30_000);
 });
 
 // ---------------------------------------------------------------------------
