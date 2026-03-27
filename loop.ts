@@ -81,9 +81,6 @@ export async function runEvolutionLoop(
       scores: initialScores.scores,
     });
 
-    // Initialize cached entries list with the initial agent
-    let archiveEntries = archive.entries();
-
     // --- Main evolution loop ---
     for (let t = 1; t <= config.iterations; t++) {
       // Budget check
@@ -101,6 +98,7 @@ export async function runEvolutionLoop(
       }
 
       // Select k parents — either via fixed algorithm or agent's editable selection
+      const archiveEntries = archive.entries();
       let parents: ArchiveEntry[];
       if (config.editableSelection) {
         parents = await runEditableSelection(
@@ -179,7 +177,7 @@ export async function runEvolutionLoop(
               runTaskAgent(provider, config, childRepoPath, evalCase, domain),
             config.eval.domains,
             config.eval.stagedEval,
-            archiveEntries,
+            archive.entries(),
           );
 
           return { compiled: true as const, childId, childRepoPath, evalResult, diff, parentId: parent.id };
@@ -189,7 +187,6 @@ export async function runEvolutionLoop(
       // Process results: add compiled variants, mark invalid parents
       const failedParents = new Map<AgentId, number>(); // parentId -> failure count
       const attemptedParents = new Map<AgentId, number>(); // parentId -> attempt count
-      const newEntries: ArchiveEntry[] = [];
 
       for (const result of results) {
         if (result.status !== "fulfilled" || result.value === null) continue;
@@ -221,10 +218,6 @@ export async function runEvolutionLoop(
         archive.incrementChildCount(parentId);
         newAgentIds.push(childId);
 
-        // Get the newly added entry and cache it
-        const newEntry = archive.get(childId)!;
-        newEntries.push(newEntry);
-        
         emit({
           type: "agent_created",
           agentId: childId,
@@ -238,27 +231,11 @@ export async function runEvolutionLoop(
         });
       }
 
-      // Update cached entries list with new agents
-      archiveEntries.push(...newEntries);
-
       // Invalidate parents whose children ALL failed compilation
       for (const [parentId, failures] of failedParents) {
         const attempts = attemptedParents.get(parentId) ?? 0;
-        if (failures === attempts) {
+        if (failures === attempts && attempts > 0) {
           archive.invalidateParent(parentId);
-          // Update the cached entry's validParent flag
-          const parentEntry = archiveEntries.find(e => e.id === parentId);
-          if (parentEntry) {
-            parentEntry.validParent = false;
-          }
-        }
-      }
-
-      // Update compiledChildrenCount in cached entries
-      for (const parentId of attemptedParents.keys()) {
-        const parentEntry = archiveEntries.find(e => e.id === parentId);
-        if (parentEntry) {
-          parentEntry.compiledChildrenCount = archive.get(parentId)!.compiledChildrenCount;
         }
       }
 
