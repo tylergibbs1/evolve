@@ -717,6 +717,42 @@ describe("Feature: Meta agent editor tool + task agent fallbacks", () => {
     expect(result.bestScore).toBeGreaterThanOrEqual(0);
   }, 30_000);
 
+  test("task agent catch branch when subprocess crashes", async () => {
+    const { dir, config } = await setupLoopTest();
+    loopDir = dir;
+
+    // Write task.ts that exports buildTaskPrompt but it throws when called
+    await Bun.write(
+      join(config.initialAgentPath, "task.ts"),
+      `export function buildTaskPrompt(inputs: Record<string, unknown>): string {
+  throw new Error("subprocess crash");
+}`,
+    );
+
+    const provider = createMockProvider();
+    const result = await runEvolutionLoop(provider, config, () => {});
+    // Should still complete — falls back to generic prompt
+    expect(result.bestScore).toBeGreaterThanOrEqual(0);
+  }, 30_000);
+
+  test("task agent else branch when no task.ts exists in repo", async () => {
+    const { dir, config } = await setupLoopTest();
+    loopDir = dir;
+
+    // Remove task.ts from agent dir so customTaskExists is false
+    const { rm: rmFile } = await import("node:fs/promises");
+    await rmFile(join(config.initialAgentPath, "task.ts"));
+    // But we need the initial eval to work... checkCompiles is only called on children.
+    // For initial eval, it just calls runTaskAgent which checks customTaskExists.
+    // Since we deleted task.ts, it should take the else branch (line 389).
+
+    // But wait — initial eval will still run. task.ts not existing means
+    // runTaskAgent goes to the else branch. No compilation check for initial agent.
+    const provider = createMockProvider();
+    const result = await runEvolutionLoop(provider, config, () => {});
+    expect(result.bestScore).toBeGreaterThanOrEqual(0);
+  }, 30_000);
+
   test("task agent handles non-JSON text response", async () => {
     const { dir, config } = await setupLoopTest();
     loopDir = dir;
