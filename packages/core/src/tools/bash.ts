@@ -71,29 +71,18 @@ export class ScopedBashTool implements BashTool {
   }
 
   private isDirectoryChangeCommand(command: string): boolean {
-    // Early return for empty or very short commands
-    if (command.length < 2) {
-      return false;
-    }
-    
-    // Optimize for common case: most commands don't start with 'c'
-    if (command[0] !== 'c') {
-      return false;
-    }
-    
     // Skip leading whitespace without allocating new string
     let start = 0;
     while (start < command.length && (command[start] === ' ' || command[start] === '\t')) {
       start++;
     }
     
-    // Check if remaining starts with "cd" followed by end or space
-    if (start + 2 > command.length) {
-      return false;
-    }
-    
-    return command[start] === 'c' && 
+    // Check if remaining starts with "cd" followed by end or whitespace
+    return start + 1 < command.length &&
+           command[start] === 'c' && 
            command[start + 1] === 'd' && 
-           (start + 2 === command.length || command[start + 2] === ' ');
+           (start + 2 === command.length || 
+            command[start + 2] === ' ' || 
+            command[start + 2] === '\t');
   }
 }
