@@ -1,6 +1,13 @@
-# Evolve
+<p align="center">
+  <img src="logo.svg" width="200" alt="Evolve">
+</p>
 
-Metacognitive self-improving agent framework. TypeScript implementation of the [Darwin Godel Machine with Hyperagents (DGM-H)](https://arxiv.org/abs/2603.19461).
+<h1 align="center">Evolve</h1>
+
+<p align="center">
+  Metacognitive self-improving agent framework.<br>
+  TypeScript implementation of the <a href="https://arxiv.org/abs/2603.19461">Darwin Godel Machine with Hyperagents (DGM-H)</a>.
+</p>
 
 The system maintains an archive of self-modifying agent programs. Each agent contains a task-solving component and a meta component that modifies itself and other agents. The meta component itself is editable — enabling metacognitive self-modification. Over time, agents improve both at solving tasks and at generating improvements.
 
