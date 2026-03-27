@@ -41,10 +41,45 @@ export class ScopedBashTool implements BashTool {
     ]);
     const exitCode = await proc.exited;
 
+    // Update working directory if command succeeded and might have changed it
+    if (exitCode === 0 && this.isDirectoryChangeCommand(command)) {
+      await this.updateWorkingDirectory(command);
+    }
+
     return {
       stdout: truncateString(stdout, 100_000),
       stderr: truncateString(stderr, 50_000),
       exitCode,
     };
+  }
+
+  private isDirectoryChangeCommand(command: string): boolean {
+    const trimmed = command.trim();
+    return trimmed.startsWith("cd ") || trimmed === "cd";
+  }
+
+  private async updateWorkingDirectory(command: string): Promise<void> {
+    // Execute pwd in the same context to get the actual new directory
+    const pwdProc = Bun.spawn(["bash", "-c", `${command} && pwd`], {
+      cwd: this.cwd,
+      stdout: "pipe",
+      stderr: "pipe",
+      timeout: 5000,
+      env: {
+        HOME: this.repoPath,
+        PATH: process.env["PATH"] ?? "/usr/bin:/bin:/usr/local/bin",
+      },
+    });
+
+    const stdout = await new Response(pwdProc.stdout).text();
+    const exitCode = await pwdProc.exited;
+
+    if (exitCode === 0) {
+      const newCwd = stdout.trim();
+      // Only update if the new directory is within our repo scope
+      if (newCwd.startsWith(this.repoPath)) {
+        this.cwd = newCwd;
+      }
+    }
   }
 }
