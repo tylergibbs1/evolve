@@ -1,5 +1,6 @@
 import type { BashResult, BashTool } from "../types.ts";
 import { truncateString } from "../utils/string.ts";
+import { resolve } from "node:path";
 
 /**
  * Bash tool implementation using Bun subprocess.
@@ -33,15 +34,11 @@ export class ScopedBashTool implements BashTool {
       // Pre-compute the new directory path without spawning a subprocess
       const targetPath = cdMatch[1]?.trim();
       if (targetPath) {
-        // Resolve relative/absolute path
-        const resolved = targetPath.startsWith('/') 
-          ? targetPath 
-          : `${this.cwd}/${targetPath}`;
-        // Normalize path (handle .. and .)
-        const normalized = this.normalizePath(resolved);
+        // Use Node.js resolve for robust path normalization
+        const resolved = resolve(this.cwd, targetPath);
         // Only update if within repo scope
-        if (normalized.startsWith(this.repoPath)) {
-          newCwd = normalized;
+        if (resolved.startsWith(this.repoPath)) {
+          newCwd = resolved;
         }
       } else {
         // cd with no args goes to HOME (repoPath)
@@ -79,25 +76,5 @@ export class ScopedBashTool implements BashTool {
       stderr: truncateString(stderr, 50_000),
       exitCode,
     };
-  }
-
-  private normalizePath(path: string): string {
-    // Simple path normalization - handle . and .. components
-    const parts = path.split('/').filter(p => p.length > 0);
-    const normalized: string[] = [];
-    
-    for (const part of parts) {
-      if (part === '.') {
-        continue; // Skip current directory references
-      } else if (part === '..') {
-        if (normalized.length > 0) {
-          normalized.pop(); // Go up one level
-        }
-      } else {
-        normalized.push(part);
-      }
-    }
-    
-    return '/' + normalized.join('/');
   }
 }
