@@ -71,7 +71,12 @@ export class ScopedBashTool implements BashTool {
   }
 
   private isDirectoryChangeCommand(command: string): boolean {
+    // Optimize for common case: most commands don't start with 'cd'
+    if (command.length < 2 || command[0] !== 'c') {
+      return false;
+    }
+    
     const trimmed = command.trim();
-    return trimmed.startsWith("cd ") || trimmed === "cd";
+    return trimmed === "cd" || (trimmed.length > 3 && trimmed.startsWith("cd "));
   }
 }
