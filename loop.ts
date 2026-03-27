@@ -442,28 +442,33 @@ Respond with your answer using the submit_response tool.`;
 }
 
 /**
- * Check if an agent variant has valid, parseable TypeScript.
+ * Check if an agent variant has valid TypeScript syntax.
  *
- * Uses `bun build --no-bundle` for a quick syntax check. Falls back to
- * a simpler existence and length check if build fails.
+ * Uses a simplified approach: check that task.ts exists, is non-empty,
+ * and can be parsed by TypeScript without syntax errors.
  */
 async function checkCompiles(repoPath: string): Promise<boolean> {
   const taskFile = Bun.file(join(repoPath, "task.ts"));
   if (!(await taskFile.exists())) return false;
+  
   const content = await taskFile.text();
   if (content.trim().length === 0) return false;
 
-  // Quick syntax check — verify Bun can parse the file
-  const proc = Bun.spawn(
-    ["bun", "build", "--no-bundle", join(repoPath, "task.ts"), "--outdir", "/dev/null"],
-    {
-      cwd: repoPath,
-      stdout: "pipe",
-      stderr: "pipe",
-    },
-  );
-  const exitCode = await proc.exited;
-  return exitCode === 0;
+  // Use Bun's built-in TypeScript transpiler to check syntax
+  try {
+    const proc = Bun.spawn(
+      ["bun", "build", "--no-bundle", "--target=node", join(repoPath, "task.ts")],
+      {
+        cwd: repoPath,
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
+    const exitCode = await proc.exited;
+    return exitCode === 0;
+  } catch {
+    return false;
+  }
 }
 
 /**
