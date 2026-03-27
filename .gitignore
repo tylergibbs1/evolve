@@ -13,3 +13,8 @@ examples/*/agent/
 examples/*/output/
 results.tsv
 run.log
+research.json
+experiment-*-agent/
+experiment-*-output/
+experiment-output/
+experiment-agent/
