@@ -1,26 +1,22 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
-  <!--
-    Evolve logo: A single continuous stroke forming a spiral
-    that loops back into itself — self-improvement as a symbol.
-    Minimal, monochrome, geometric.
-  -->
-  <rect width="512" height="512" rx="108" fill="#0A0A0A"/>
-  <g transform="translate(256,256)">
-    <!-- Outer arc: open circle with a gap -->
+  <rect width="512" height="512" rx="108" fill="#171717"/>
+  <g transform="translate(256,260)">
+    <!--
+      Golden spiral — single continuous stroke, 1.5 turns inward.
+      Traced from the Gemini-generated reference (v2).
+    -->
     <path
-      d="M 0,-120 A 120,120 0 1,1 -84,-84"
+      d="
+        M -10,-155
+        A 155,155 0 1,0 110,110
+        A 105,105 0 1,1 -5,10
+        A 55,55 0 1,0 25,-40
+      "
       fill="none"
       stroke="white"
-      stroke-width="28"
+      stroke-width="38"
       stroke-linecap="round"
-    />
-    <!-- Inner spiral arm curving inward from the gap -->
-    <path
-      d="M -84,-84 C -40,-40 -60,10 -10,10 C 40,10 50,-40 20,-65"
-      fill="none"
-      stroke="white"
-      stroke-width="28"
-      stroke-linecap="round"
+      stroke-linejoin="round"
     />
   </g>
 </svg>
