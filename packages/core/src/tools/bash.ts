@@ -76,7 +76,19 @@ export class ScopedBashTool implements BashTool {
       return false;
     }
     
-    const trimmed = command.trim();
-    return trimmed === "cd" || (trimmed.length > 3 && trimmed.startsWith("cd "));
+    // Skip leading whitespace without allocating new string
+    let start = 0;
+    while (start < command.length && (command[start] === ' ' || command[start] === '\t')) {
+      start++;
+    }
+    
+    // Check if remaining starts with "cd" followed by end or space
+    if (start + 2 > command.length) {
+      return false;
+    }
+    
+    return command[start] === 'c' && 
+           command[start + 1] === 'd' && 
+           (start + 2 === command.length || command[start + 2] === ' ');
   }
 }
