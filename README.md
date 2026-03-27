@@ -68,8 +68,19 @@ const domain: DomainConfig = {
     // Return 0-1 score
     return output === expected.expected ? 1 : 0;
   },
+  // Optional: constrain output format via Anthropic structured outputs
+  outputSchema: {
+    type: "object",
+    properties: {
+      answer: { type: "string" },
+    },
+    required: ["answer"],
+    additionalProperties: false,
+  },
 };
 ```
+
+When `outputSchema` is provided, the LLM is constrained via `output_config.format` to return valid JSON matching the schema. This prevents the meta agent from accidentally breaking the output format during evolution.
 
 ### Run evolution
 
@@ -122,7 +133,9 @@ Based on two ICLR 2026 papers:
 | **Parent Selection** | Sigmoid + novelty bonus (Appendix A.2). Balances exploitation of high scorers with exploration of under-sampled agents. |
 | **Staged Evaluation** | Multi-tier: cheap screen → full eval. Only top candidates get expensive evaluation. |
 | **Tools** | Agents get exactly 2 tools: `bash` and `editor`. The papers proved these sufficient for agents to build whatever infrastructure they need. |
-| **Hidden Evaluator** | Agents see scores, never scoring code. Prevents objective hacking (DGM Appendix H). |
+| **Structured Outputs** | Optional `outputSchema` on domains uses Anthropic's `output_config.format` to guarantee valid JSON, eliminating format breakage during evolution. |
+| **Per-Case Feedback** | Evaluator populates `EvalFeedback.feedback` with per-case pass/fail diagnostics so the meta agent can make targeted improvements. |
+| **Hidden Evaluator** | Agents see scores and per-case results, never scoring code. Prevents objective hacking (DGM Appendix H). |
 | **Editable Selection** | Meta agent can modify its own parent selection strategy — the key metacognitive feature. |
 | **Invalid Parent Marking** | Parents whose children consistently fail compilation are marked invalid and skipped. |
 | **Protected Paths** | Evaluation files are restored after the meta agent runs, preventing metric gaming. |
@@ -164,8 +177,9 @@ packages/
 
 **Diverges from the papers:**
 - TypeScript on Bun instead of Python (Bun runs .ts natively, zero build step)
-- Anthropic SDK with `tool_choice` for structured output instead of regex parsing
-- Three new features from HyperAgents analysis: invalid parent marking, protected paths, editable selection
+- Anthropic SDK with `tool_choice` for structured output instead of regex parsing; optional `output_config.format` for schema-constrained responses
+- Per-case evaluation feedback threaded through to the meta agent
+- Four new features from HyperAgents analysis: invalid parent marking, protected paths, editable selection, structured outputs
 
 ## Configuration
 
@@ -178,9 +192,9 @@ const config: RunConfig = {
   protectedPaths: [],       // Paths to restore after meta agent
   editableSelection: false, // Allow agent to edit selection strategy
   llm: {
-    diagnosis:    { provider: "anthropic", model: "claude-sonnet-4-20250514", temperature: 0 },
-    modification: { provider: "anthropic", model: "claude-sonnet-4-20250514", temperature: 0 },
-    evaluation:   { provider: "anthropic", model: "claude-sonnet-4-20250514", temperature: 0 },
+    diagnosis:    { provider: "anthropic", model: "claude-opus-4-6", temperature: 0 },
+    modification: { provider: "anthropic", model: "claude-opus-4-6", temperature: 0 },
+    evaluation:   { provider: "anthropic", model: "claude-opus-4-6", temperature: 0 },
   },
   budget: {
     maxCostUSD: 500,
@@ -193,10 +207,11 @@ const config: RunConfig = {
 ## Testing
 
 ```bash
-bun test                          # 168 unit tests + 10 feature tests
-bun test packages/core/src/integration.test.ts  # real LLM integration tests
+bun test                          # 194 tests (unit + feature + integration)
 bunx tsc --noEmit                 # type checking (required — Bun strips types)
 ```
+
+Test coverage: 99.67% line coverage across all core modules.
 
 ## Cost estimates
 
@@ -218,6 +233,26 @@ The CLI displays estimated costs before launching a run.
 | LLM | @anthropic-ai/sdk |
 | CLI | Commander.js |
 | Testing | bun test |
+
+## Experiment findings
+
+We ran 20+ experiments across 6 task domains (data extraction, entity resolution, constraint satisfaction, data normalization, code generation, logic puzzles) with Opus 4.6, Sonnet 4.6, and Haiku 4.5.
+
+### What works
+
+- **Specification discovery**: Given one example of correct output and per-case scoring, the meta agent reverse-engineers format conventions (date formats, phone standards, currency codes, name normalization rules) and jumps from 0.54 → 1.00 in a single generation.
+- **Structured outputs eliminate format breakage**: Adding `outputSchema` to a domain prevents the #1 failure mode — meta agents accidentally changing the output structure. With schema constraints, even a vague "You are an agent" prompt produces valid structured JSON.
+
+### What doesn't work
+
+- **Coarse feedback kills evolution**: When the meta agent only sees an aggregate score (e.g., `score: 0.542` for 6 records), it can't diagnose what's failing and makes zero modifications. The same task with per-case feedback solves instantly. Feedback granularity is the primary bottleneck.
+- **No iterative refinement**: In every successful case, improvement happened in generation 1. Generations 2-5 never improved further. The multi-generation evolution loop adds no value over a single meta-agent rewrite.
+- **Prompt evolution can't overcome model capability limits**: For reasoning tasks (Knights & Knaves logic puzzles), the meta agent generates excellent prompts (exhaustive case enumeration, formal logic rules) but neither Opus nor Haiku improves from them. The bottleneck is model reasoning capacity, not prompt quality.
+- **Strong baselines leave no headroom**: Opus 4.6 scores 0.95-1.0 on most tasks with any reasonable prompt. Evolution has nothing to optimize.
+
+### Implications
+
+The framework is most useful for **format/specification discovery** tasks where the agent needs to learn conventions from scoring feedback — not for capability amplification. For evolution to work, you need: (1) granular per-case feedback, (2) a genuine performance gradient, and (3) tasks where better prompting actually helps.
 
 ## Papers
 
