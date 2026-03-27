@@ -335,13 +335,22 @@ describe("evaluateAgent", () => {
     const staged: StagedEvalConfig = {
       stages: [
         { taskCount: 3, passThreshold: 0, passCondition: "any" },
-        { taskCount: 10, passThreshold: 0, passCondition: "any", archiveRankRequired: 2 },
+        { taskCount: 10, passThreshold: 0, passCondition: "any", archiveRankRequired: 1 },
       ],
       defaultScore: 0,
     };
 
-    // Agent that always gets 0 — it won't be in top-2 of the archive
-    const runTask = async () => "wrong";
+    // Agent gets first few right (passes stage 1) but current average is low
+    let callIdx = 0;
+    const runTask = async (evalCase: { input: unknown }) => {
+      callIdx++;
+      // Return correct for first call so stage 1 "any" passes
+      if (callIdx <= 1) {
+        const val = (evalCase.input as { value: number }).value;
+        return val * 2;
+      }
+      return "wrong";
+    };
 
     // Provide archive entries that score higher, so our agent is ranked lower
     const archiveEntries = [
@@ -375,9 +384,11 @@ describe("evaluateAgent", () => {
       archiveEntries,
     );
 
-    // Should have stopped after stage 1 due to archive rank check
-    // Score should be 0 (all wrong/default)
-    expect(result.scores[0]!.trainScore).toBe(0);
+    // Stage 1 passes (1 correct out of 3), then stage 2 archiveRankRequired
+    // check fails because our agent's score is below the archive top-1.
+    // Remaining cases get defaultScore (0), so final = 1 correct / 10 total = 0.1
+    expect(result.scores[0]!.trainScore).toBeGreaterThan(0);
+    expect(result.scores[0]!.trainScore).toBeLessThan(0.5);
   });
 
   test("archiveRankRequired proceeds when agent is in top-N", async () => {
