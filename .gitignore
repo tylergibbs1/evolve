@@ -11,3 +11,5 @@ output/
 .tmp/
 examples/*/agent/
 examples/*/output/
+results.tsv
+run.log
