@@ -330,6 +330,98 @@ describe("evaluateAgent", () => {
     expect(result.scores[0]!.testScore).toBeNull();
   });
 
+  test("archiveRankRequired skips remaining stages when agent not in top-N", async () => {
+    const domain = makeDomain("math", 10);
+    const staged: StagedEvalConfig = {
+      stages: [
+        { taskCount: 3, passThreshold: 0, passCondition: "any" },
+        { taskCount: 10, passThreshold: 0, passCondition: "any", archiveRankRequired: 2 },
+      ],
+      defaultScore: 0,
+    };
+
+    // Agent that always gets 0 — it won't be in top-2 of the archive
+    const runTask = async () => "wrong";
+
+    // Provide archive entries that score higher, so our agent is ranked lower
+    const archiveEntries = [
+      {
+        id: agentId("top1"),
+        parentId: null,
+        generation: 0,
+        repoSnapshot: "/tmp/top1",
+        scores: [{ domain: "math", trainScore: 0.9, validationScore: null, testScore: null }],
+        compiledChildrenCount: 0,
+        validParent: true,
+        metadata: { createdAt: new Date(), diffFromParent: "" },
+      },
+      {
+        id: agentId("top2"),
+        parentId: null,
+        generation: 0,
+        repoSnapshot: "/tmp/top2",
+        scores: [{ domain: "math", trainScore: 0.8, validationScore: null, testScore: null }],
+        compiledChildrenCount: 0,
+        validParent: true,
+        metadata: { createdAt: new Date(), diffFromParent: "" },
+      },
+    ];
+
+    const result = await evaluateAgent(
+      agentId("test"),
+      runTask,
+      [domain],
+      staged,
+      archiveEntries,
+    );
+
+    // Should have stopped after stage 1 due to archive rank check
+    // Score should be 0 (all wrong/default)
+    expect(result.scores[0]!.trainScore).toBe(0);
+  });
+
+  test("archiveRankRequired proceeds when agent is in top-N", async () => {
+    const domain = makeDomain("math", 10);
+    const staged: StagedEvalConfig = {
+      stages: [
+        { taskCount: 3, passThreshold: 0, passCondition: "any" },
+        { taskCount: 10, passThreshold: 0, passCondition: "any", archiveRankRequired: 5 },
+      ],
+      defaultScore: 0,
+    };
+
+    // Agent that always succeeds — it'll be top-ranked
+    const runTask = async (evalCase: { input: unknown }) => {
+      const val = (evalCase.input as { value: number }).value;
+      return val * 2;
+    };
+
+    // Archive with lower scores
+    const archiveEntries = [
+      {
+        id: agentId("low1"),
+        parentId: null,
+        generation: 0,
+        repoSnapshot: "/tmp/low1",
+        scores: [{ domain: "math", trainScore: 0.1, validationScore: null, testScore: null }],
+        compiledChildrenCount: 0,
+        validParent: true,
+        metadata: { createdAt: new Date(), diffFromParent: "" },
+      },
+    ];
+
+    const result = await evaluateAgent(
+      agentId("test"),
+      runTask,
+      [domain],
+      staged,
+      archiveEntries,
+    );
+
+    // Should pass archive rank check and evaluate all cases
+    expect(result.scores[0]!.trainScore).toBe(1);
+  });
+
   test("scorer returning fractional scores", async () => {
     const domain: DomainConfig = {
       name: "fuzzy",
