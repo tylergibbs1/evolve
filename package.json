@@ -9,6 +9,7 @@
     "lint": "tsc --noEmit && bun test"
   },
   "devDependencies": {
+    "@anthropic-ai/sdk": "^0.80.0",
     "@types/bun": "latest",
     "typescript": "^5.9.0"
   }
