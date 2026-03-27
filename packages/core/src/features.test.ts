@@ -618,6 +618,74 @@ describe("Feature: Editable selection via select_parent.ts", () => {
     expect(events).toContain("run_complete");
   }, 30_000);
 
+  test("falls back when select_parent.ts exits non-zero", async () => {
+    const { dir, agentDir, config } = await setupLoopTest();
+    loopDir = dir;
+    config.editableSelection = true;
+
+    // Write a script that exits with error
+    await Bun.write(
+      join(agentDir, "select_parent.ts"),
+      `process.exit(1);`,
+    );
+
+    const provider = createMockProvider();
+    const result = await runEvolutionLoop(provider, config, () => {});
+    expect(result.bestScore).toBeGreaterThanOrEqual(0);
+  }, 30_000);
+
+  test("falls back when select_parent.ts returns empty array", async () => {
+    const { dir, agentDir, config } = await setupLoopTest();
+    loopDir = dir;
+    config.editableSelection = true;
+
+    // Write a script that outputs empty array
+    await Bun.write(
+      join(agentDir, "select_parent.ts"),
+      `process.stdout.write("[]");`,
+    );
+
+    const provider = createMockProvider();
+    const result = await runEvolutionLoop(provider, config, () => {});
+    expect(result.bestScore).toBeGreaterThanOrEqual(0);
+  }, 30_000);
+
+  test("falls back when select_parent.ts throws", async () => {
+    const { dir, agentDir, config } = await setupLoopTest();
+    loopDir = dir;
+    config.editableSelection = true;
+
+    // Write a script that throws
+    await Bun.write(
+      join(agentDir, "select_parent.ts"),
+      `throw new Error("crash");`,
+    );
+
+    const provider = createMockProvider();
+    const result = await runEvolutionLoop(provider, config, () => {});
+    expect(result.bestScore).toBeGreaterThanOrEqual(0);
+  }, 30_000);
+
+  test("pads results when select_parent.ts returns fewer than count", async () => {
+    const { dir, agentDir, config } = await setupLoopTest();
+    loopDir = dir;
+    config.editableSelection = true;
+    config.k = 3;
+
+    // Script that returns just one ID
+    await Bun.write(
+      join(agentDir, "select_parent.ts"),
+      `const input = JSON.parse(await Bun.stdin.text());
+const ids = input.archive.map((a: any) => a.id);
+// Return fewer than count
+process.stdout.write(JSON.stringify(ids.slice(0, 1)));`,
+    );
+
+    const provider = createMockProvider();
+    const result = await runEvolutionLoop(provider, config, () => {});
+    expect(result.bestScore).toBeGreaterThanOrEqual(0);
+  }, 30_000);
+
   test("falls back to fixed selection when no select_parent.ts exists", async () => {
     const { dir, config } = await setupLoopTest();
     loopDir = dir;
