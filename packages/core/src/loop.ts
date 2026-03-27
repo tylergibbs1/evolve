@@ -56,6 +56,9 @@ export async function runEvolutionLoop(
     config.llm.modification.model,
   );
 
+  // Cache per-case feedback so the meta agent can see which cases failed
+  const feedbackCache = new Map<AgentId, EvalFeedback[]>();
+
   try {
     // --- Step 0: Evaluate initial agent and add to archive ---
     const initialId = agentId(`agent-0-initial`);
@@ -78,6 +81,7 @@ export async function runEvolutionLoop(
       initialScores.scores,
       "",
     );
+    feedbackCache.set(initialId, initialScores.feedback);
     emit({
       type: "eval_complete",
       agentId: initialId,
@@ -134,8 +138,9 @@ export async function runEvolutionLoop(
           await mkdir(join(config.outputDir, "working"), { recursive: true });
           await cp(parent.repoSnapshot, childRepoPath, { recursive: true });
 
-          // Run meta agent to modify the clone
-          const evalHistory = parent.scores.map(
+          // Run meta agent to modify the clone — use cached feedback if available
+          const cachedFeedback = feedbackCache.get(parent.id);
+          const evalHistory = cachedFeedback ?? parent.scores.map(
             (s): EvalFeedback => ({
               domain: s.domain,
               score: s.validationScore ?? s.trainScore,
@@ -212,6 +217,7 @@ export async function runEvolutionLoop(
         }
 
         const { childId, childRepoPath, evalResult, diff, parentId } = val;
+        feedbackCache.set(childId, evalResult.feedback);
         await archive.add(
           childId,
           parentId,
