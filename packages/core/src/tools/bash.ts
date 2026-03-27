@@ -1,4 +1,5 @@
 import type { BashResult, BashTool } from "../types.ts";
+import { truncateString } from "../utils/string.ts";
 
 /**
  * Bash tool implementation using Bun subprocess.
@@ -41,17 +42,9 @@ export class ScopedBashTool implements BashTool {
     const exitCode = await proc.exited;
 
     return {
-      stdout: truncate(stdout, 100_000),
-      stderr: truncate(stderr, 50_000),
+      stdout: truncateString(stdout, 100_000),
+      stderr: truncateString(stderr, 50_000),
       exitCode,
     };
   }
-}
-
-/**
- * Truncate string to maxLen characters, adding truncation notice.
- */
-function truncate(str: string, maxLen: number): string {
-  if (str.length <= maxLen) return str;
-  return str.slice(0, maxLen) + `\n... (truncated, ${str.length - maxLen} chars omitted)`;
 }
