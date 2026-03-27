@@ -24,30 +24,28 @@ export class ScopedBashTool implements BashTool {
   }
 
   async run(command: string): Promise<BashResult> {
+    const trimmedCommand = command.trim();
+    
     // Check for directory change and extract target path in one operation
-    const cdMatch = ScopedBashTool.CD_REGEX.exec(command.trim());
+    const cdMatch = ScopedBashTool.CD_REGEX.exec(trimmedCommand);
     const isDirectoryChange = cdMatch !== null;
     
-    let actualCommand = command;
-    let newCwd = this.cwd;
-    
     if (isDirectoryChange) {
-      // Pre-compute the new directory path without spawning a subprocess
       const targetPath = cdMatch[1]?.trim();
+      let newCwd: string;
+      
       if (targetPath) {
         // Use Node.js resolve for robust path normalization
         const resolved = resolve(this.cwd, targetPath);
         // Only update if within repo scope
-        if (resolved.startsWith(this.repoPath)) {
-          newCwd = resolved;
-        }
+        newCwd = resolved.startsWith(this.repoPath) ? resolved : this.cwd;
       } else {
         // cd with no args goes to HOME (repoPath)
         newCwd = this.repoPath;
       }
       
       // For pure cd commands, avoid subprocess entirely
-      if (command.trim() === `cd${targetPath ? ` ${targetPath}` : ''}`) {
+      if (trimmedCommand === `cd${targetPath ? ` ${targetPath}` : ''}`) {
         // Verify the target directory exists
         try {
           const dirStat = await stat(newCwd);
@@ -73,9 +71,42 @@ export class ScopedBashTool implements BashTool {
           };
         }
       }
+      
+      // For compound commands with cd, still need subprocess but pre-compute new directory
+      const proc = Bun.spawn(["bash", "-c", command], {
+        cwd: this.cwd,
+        stdout: "pipe",
+        stderr: "pipe",
+        timeout: this.timeoutMs,
+        killSignal: "SIGKILL",
+        env: {
+          HOME: this.repoPath,
+          PATH: process.env["PATH"] ?? "/usr/bin:/bin:/usr/local/bin",
+          TMPDIR: `${this.repoPath}/.tmp`,
+          // No API keys or secrets inherited
+        },
+      });
+
+      const [stdout, stderr] = await Promise.all([
+        new Response(proc.stdout).text(),
+        new Response(proc.stderr).text(),
+      ]);
+      const exitCode = await proc.exited;
+
+      // Update working directory if command succeeded
+      if (exitCode === 0) {
+        this.cwd = newCwd;
+      }
+
+      return {
+        stdout: truncateString(stdout, 100_000),
+        stderr: truncateString(stderr, 50_000),
+        exitCode,
+      };
     }
 
-    const proc = Bun.spawn(["bash", "-c", actualCommand], {
+    // Non-cd commands: standard subprocess execution
+    const proc = Bun.spawn(["bash", "-c", command], {
       cwd: this.cwd,
       stdout: "pipe",
       stderr: "pipe",
@@ -94,11 +125,6 @@ export class ScopedBashTool implements BashTool {
       new Response(proc.stderr).text(),
     ]);
     const exitCode = await proc.exited;
-
-    // Update working directory if command succeeded and was a directory change
-    if (exitCode === 0 && isDirectoryChange) {
-      this.cwd = newCwd;
-    }
 
     return {
       stdout: truncateString(stdout, 100_000),
