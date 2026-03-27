@@ -1,6 +1,7 @@
 import type { BashResult, BashTool } from "../types.ts";
 import { truncateString } from "../utils/string.ts";
 import { resolve } from "node:path";
+import { stat } from "node:fs/promises";
 
 /**
  * Bash tool implementation using Bun subprocess.
@@ -43,6 +44,34 @@ export class ScopedBashTool implements BashTool {
       } else {
         // cd with no args goes to HOME (repoPath)
         newCwd = this.repoPath;
+      }
+      
+      // For pure cd commands, avoid subprocess entirely
+      if (command.trim() === `cd${targetPath ? ` ${targetPath}` : ''}`) {
+        // Verify the target directory exists
+        try {
+          const dirStat = await stat(newCwd);
+          if (dirStat.isDirectory()) {
+            this.cwd = newCwd;
+            return {
+              stdout: '',
+              stderr: '',
+              exitCode: 0,
+            };
+          } else {
+            return {
+              stdout: '',
+              stderr: `cd: not a directory: ${targetPath || '~'}`,
+              exitCode: 1,
+            };
+          }
+        } catch {
+          return {
+            stdout: '',
+            stderr: `cd: no such file or directory: ${targetPath || '~'}`,
+            exitCode: 1,
+          };
+        }
       }
     }
 
