@@ -11,6 +11,9 @@ const DEFAULT_PRICING: Record<string, { input: number; output: number }> = {
   "o4-mini": { input: 1.1, output: 4.4 },
 };
 
+// Fallback pricing for unknown models to avoid repeated object creation
+const FALLBACK_PRICING = { input: 3, output: 15 };
+
 export class BudgetTracker {
   private state: BudgetState = {
     totalInputTokens: 0,
@@ -25,7 +28,7 @@ export class BudgetTracker {
     private pricing?: { input: number; output: number },
   ) {
     if (!this.pricing) {
-      this.pricing = DEFAULT_PRICING[model] ?? { input: 3, output: 15 };
+      this.pricing = DEFAULT_PRICING[model] ?? FALLBACK_PRICING;
     }
   }
 
@@ -84,7 +87,7 @@ export class BudgetTracker {
     model: string,
     domainsCount: number,
   ): { estimatedTokens: number; estimatedCostUSD: number } {
-    const pricing = DEFAULT_PRICING[model] ?? { input: 3, output: 15 };
+    const pricing = DEFAULT_PRICING[model] ?? FALLBACK_PRICING;
     // ~330K tokens per modification attempt (paper: 33M / 100 iterations)
     const tokensPerModification = 330_000;
     // ~50K tokens per evaluation (conservative estimate)
