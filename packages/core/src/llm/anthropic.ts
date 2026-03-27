@@ -3,6 +3,7 @@ import type {
   LLMResponse,
   LLMRoleConfig,
   Message,
+  OutputSchema,
   ToolCall,
   ToolChoice,
   ToolDefinition,
@@ -30,6 +31,7 @@ export class AnthropicProvider implements LLMProvider {
     config: LLMRoleConfig,
     tools?: ToolDefinition[],
     toolChoice?: ToolChoice,
+    outputSchema?: OutputSchema,
   ): Promise<LLMResponse> {
     // Separate system message from conversation messages
     const systemMessages = messages.filter((m) => m.role === "system");
@@ -69,6 +71,14 @@ export class AnthropicProvider implements LLMProvider {
       messages: anthropicMessages,
       tools: anthropicTools,
       tool_choice: anthropicToolChoice,
+      ...(outputSchema ? {
+        output_config: {
+          format: {
+            type: "json_schema" as const,
+            schema: outputSchema,
+          },
+        },
+      } : {}),
     });
 
     return fromAnthropicResponse(response);

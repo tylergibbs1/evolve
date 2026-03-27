@@ -134,7 +134,7 @@ const AGENT_DIR = join(PROJECT_DIR, "experiment-agent");
 
 const ROLE_CONFIG = {
   provider: "anthropic" as const,
-  model: "claude-sonnet-4-20250514",
+  model: "claude-opus-4-6",
   temperature: 0,
 };
 
@@ -143,6 +143,17 @@ const extractionDomain: DomainConfig = {
   trainCases: TRAIN_CASES,
   testCases: TEST_CASES,
   scorer,
+  outputSchema: {
+    type: "object",
+    properties: {
+      name: { type: "string" },
+      email: { type: "string" },
+      company: { type: "string" },
+      role: { type: "string" },
+    },
+    required: ["name", "email", "company", "role"],
+    additionalProperties: false,
+  },
 };
 
 const stagedEval: StagedEvalConfig = {

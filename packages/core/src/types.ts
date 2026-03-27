@@ -233,12 +233,26 @@ export interface StagedEvalConfig {
   defaultScore: number;
 }
 
+/**
+ * JSON Schema for structured outputs.
+ * When provided on a domain, the LLM is constrained to return JSON matching
+ * this schema — eliminating output format breakage during evolution.
+ */
+export type OutputSchema = Record<string, unknown>;
+
 export interface DomainConfig {
   name: string;
   trainCases: EvalCase[];
   validationCases?: EvalCase[];
   testCases: EvalCase[];
   scorer: (output: unknown, expected: EvalCase) => Promise<number>;
+  /**
+   * Optional JSON Schema for the agent's output. When provided, the LLM is
+   * constrained via `output_config.format` to return valid JSON matching this
+   * schema. This prevents the meta agent from accidentally breaking the output
+   * format during evolution.
+   */
+  outputSchema?: OutputSchema;
 }
 
 export interface EvalConfig {

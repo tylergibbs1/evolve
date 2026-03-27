@@ -2,6 +2,7 @@ import type {
   LLMResponse,
   LLMRoleConfig,
   Message,
+  OutputSchema,
   ToolCall,
   ToolChoice,
   ToolDefinition,
@@ -17,6 +18,7 @@ export interface LLMProvider {
     config: LLMRoleConfig,
     tools?: ToolDefinition[],
     toolChoice?: ToolChoice,
+    outputSchema?: OutputSchema,
   ): Promise<LLMResponse>;
 }
 

@@ -17,6 +17,7 @@ import {
   type EvalFeedback,
   type EvolveEvent,
   type EventListener,
+  type OutputSchema,
   type RunConfig,
   type ToolDefinition,
   EvolveException,
@@ -60,8 +61,10 @@ export async function runEvolutionLoop(
     const initialId = agentId(`agent-0-initial`);
     const initialScores = await evaluateAgent(
       initialId,
-      (evalCase, domain) =>
-        runTaskAgent(provider, config, config.initialAgentPath, evalCase, domain),
+      (evalCase, domain) => {
+        const domainConfig = config.eval.domains.find(d => d.name === domain);
+        return runTaskAgent(provider, config, config.initialAgentPath, evalCase, domain, domainConfig?.outputSchema);
+      },
       config.eval.domains,
       config.eval.stagedEval,
       [],
@@ -173,8 +176,10 @@ export async function runEvolutionLoop(
           // Evaluate variant
           const evalResult = await evaluateAgent(
             childId,
-            (evalCase, domain) =>
-              runTaskAgent(provider, config, childRepoPath, evalCase, domain),
+            (evalCase, domain) => {
+              const domainConfig = config.eval.domains.find(d => d.name === domain);
+              return runTaskAgent(provider, config, childRepoPath, evalCase, domain, domainConfig?.outputSchema);
+            },
             config.eval.domains,
             config.eval.stagedEval,
             archive.entries(),
@@ -343,6 +348,7 @@ async function runTaskAgent(
   repoPath: string,
   evalCase: EvalCase,
   _domain: string,
+  outputSchema?: OutputSchema,
 ): Promise<unknown> {
   const customTaskPath = join(repoPath, "task.ts");
   const customTaskExists = await Bun.file(customTaskPath).exists();
@@ -390,7 +396,28 @@ process.stdout.write(prompt);
     taskPrompt = buildGenericTaskPrompt(evalCase);
   }
 
-  // Define a submit_response tool — forces structured JSON output via tool_choice
+  // When an outputSchema is provided, use structured outputs (output_config.format)
+  // to guarantee the response matches the schema. No tool hack needed.
+  if (outputSchema) {
+    const response = await provider.chat(
+      [
+        { role: "system", content: "You are a task-solving agent. Return your answer as JSON matching the required schema." },
+        { role: "user", content: taskPrompt },
+      ],
+      config.llm.evaluation,
+      undefined,
+      undefined,
+      outputSchema,
+    );
+
+    try {
+      return JSON.parse(response.content);
+    } catch {
+      return response.content;
+    }
+  }
+
+  // Fallback: use submit_response tool with forced tool_choice
   const submitTool: ToolDefinition = {
     name: "submit_response",
     description: "Submit your response to the task.",
@@ -405,7 +432,6 @@ process.stdout.write(prompt);
     },
   };
 
-  // Call LLM with forced tool use — guaranteed structured output, no parsing
   const response = await provider.chat(
     [
       { role: "system", content: "You are a task-solving agent. Use the submit_response tool to return your answer." },
@@ -416,13 +442,11 @@ process.stdout.write(prompt);
     { tool: "submit_response" },
   );
 
-  // Extract the structured response directly from the tool call
   const toolCall = response.toolCalls[0];
   if (toolCall) {
     return toolCall.input["response"] ?? toolCall.input;
   }
 
-  // Fallback: if no tool call (shouldn't happen with forced choice), try text
   try {
     return JSON.parse(response.content);
   } catch {

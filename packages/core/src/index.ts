@@ -25,6 +25,7 @@ export type {
   EvalStage,
   StagedEvalConfig,
   DomainConfig,
+  OutputSchema,
   EvalConfig,
   MetaContext,
   BudgetConfig,
