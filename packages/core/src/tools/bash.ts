@@ -12,7 +12,7 @@ import { truncateString } from "../utils/string.ts";
  */
 export class ScopedBashTool implements BashTool {
   private cwd: string;
-  private static readonly CD_REGEX = /^\s*cd(?:\s|$)/;
+  private static readonly CD_REGEX = /^\s*cd(?:\s+(.+?))?(?:\s*[;&|]|$)/;
 
   constructor(
     private repoPath: string,
@@ -22,10 +22,32 @@ export class ScopedBashTool implements BashTool {
   }
 
   async run(command: string): Promise<BashResult> {
-    // For directory change commands, get new working directory in same subprocess
-    const actualCommand = this.isDirectoryChangeCommand(command)
-      ? `${command} && pwd`
-      : command;
+    // Check for directory change and extract target path in one operation
+    const cdMatch = ScopedBashTool.CD_REGEX.exec(command.trim());
+    const isDirectoryChange = cdMatch !== null;
+    
+    let actualCommand = command;
+    let newCwd = this.cwd;
+    
+    if (isDirectoryChange) {
+      // Pre-compute the new directory path without spawning a subprocess
+      const targetPath = cdMatch[1]?.trim();
+      if (targetPath) {
+        // Resolve relative/absolute path
+        const resolved = targetPath.startsWith('/') 
+          ? targetPath 
+          : `${this.cwd}/${targetPath}`;
+        // Normalize path (handle .. and .)
+        const normalized = this.normalizePath(resolved);
+        // Only update if within repo scope
+        if (normalized.startsWith(this.repoPath)) {
+          newCwd = normalized;
+        }
+      } else {
+        // cd with no args goes to HOME (repoPath)
+        newCwd = this.repoPath;
+      }
+    }
 
     const proc = Bun.spawn(["bash", "-c", actualCommand], {
       cwd: this.cwd,
@@ -48,20 +70,8 @@ export class ScopedBashTool implements BashTool {
     const exitCode = await proc.exited;
 
     // Update working directory if command succeeded and was a directory change
-    if (exitCode === 0 && this.isDirectoryChangeCommand(command)) {
-      const newCwd = stdout.trim().split('\n').pop() || this.cwd;
-      // Only update if the new directory is within our repo scope
-      if (newCwd.startsWith(this.repoPath)) {
-        this.cwd = newCwd;
-        // Remove the pwd output from stdout for the original command
-        const lines = stdout.trim().split('\n');
-        const originalOutput = lines.slice(0, -1).join('\n');
-        return {
-          stdout: truncateString(originalOutput, 100_000),
-          stderr: truncateString(stderr, 50_000),
-          exitCode,
-        };
-      }
+    if (exitCode === 0 && isDirectoryChange) {
+      this.cwd = newCwd;
     }
 
     return {
@@ -71,7 +81,23 @@ export class ScopedBashTool implements BashTool {
     };
   }
 
-  private isDirectoryChangeCommand(command: string): boolean {
-    return ScopedBashTool.CD_REGEX.test(command);
+  private normalizePath(path: string): string {
+    // Simple path normalization - handle . and .. components
+    const parts = path.split('/').filter(p => p.length > 0);
+    const normalized: string[] = [];
+    
+    for (const part of parts) {
+      if (part === '.') {
+        continue; // Skip current directory references
+      } else if (part === '..') {
+        if (normalized.length > 0) {
+          normalized.pop(); // Go up one level
+        }
+      } else {
+        normalized.push(part);
+      }
+    }
+    
+    return '/' + normalized.join('/');
   }
 }
