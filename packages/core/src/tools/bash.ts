@@ -12,6 +12,7 @@ import { truncateString } from "../utils/string.ts";
  */
 export class ScopedBashTool implements BashTool {
   private cwd: string;
+  private static readonly CD_REGEX = /^\s*cd(?:\s|$)/;
 
   constructor(
     private repoPath: string,
@@ -71,18 +72,6 @@ export class ScopedBashTool implements BashTool {
   }
 
   private isDirectoryChangeCommand(command: string): boolean {
-    // Skip leading whitespace without allocating new string
-    let start = 0;
-    while (start < command.length && (command[start] === ' ' || command[start] === '\t')) {
-      start++;
-    }
-    
-    // Check if remaining starts with "cd" followed by end or whitespace
-    return start + 1 < command.length &&
-           command[start] === 'c' && 
-           command[start + 1] === 'd' && 
-           (start + 2 === command.length || 
-            command[start + 2] === ' ' || 
-            command[start + 2] === '\t');
+    return ScopedBashTool.CD_REGEX.test(command);
   }
 }
