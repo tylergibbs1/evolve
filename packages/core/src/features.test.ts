@@ -579,6 +579,21 @@ describe("Feature: Loop compilation and parent invalidation", () => {
 
     expect(result.bestScore).toBeGreaterThanOrEqual(0);
   }, 30_000);
+
+  test("protected directory paths are restored recursively", async () => {
+    const { dir, agentDir, config } = await setupLoopTest();
+    loopDir = dir;
+    config.protectedPaths = ["eval"];
+
+    // Create a protected directory with files
+    await mkdir(join(agentDir, "eval"), { recursive: true });
+    await Bun.write(join(agentDir, "eval", "scorer.ts"), "export const score = 1;");
+
+    const provider = createMockProvider();
+    const result = await runEvolutionLoop(provider, config, () => {});
+
+    expect(result.bestScore).toBeGreaterThanOrEqual(0);
+  }, 30_000);
 });
 
 describe("Feature: Meta agent editor tool + task agent fallbacks", () => {
