@@ -471,7 +471,7 @@ async function checkCompiles(repoPath: string): Promise<boolean> {
   // by trying to parse as a module. The agent code is run as prompt text,
   // not executed directly, so import errors are acceptable.
   const syntaxProc = Bun.spawn(
-    ["bun", "eval", `await import("${join(repoPath, "task.ts")}")`],
+    ["bun", "eval", `await import("${join(repoPath, "task.ts")}");`],
     {
       cwd: repoPath,
       stdout: "pipe",
