@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="logo.jpg" width="200" alt="Evolve">
+  <img src="logo.webp" width="200" alt="Evolve">
 </p>
 
 <h1 align="center">Evolve</h1>
