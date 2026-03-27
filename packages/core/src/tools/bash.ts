@@ -21,7 +21,12 @@ export class ScopedBashTool implements BashTool {
   }
 
   async run(command: string): Promise<BashResult> {
-    const proc = Bun.spawn(["bash", "-c", command], {
+    // For directory change commands, get new working directory in same subprocess
+    const actualCommand = this.isDirectoryChangeCommand(command)
+      ? `${command} && pwd`
+      : command;
+
+    const proc = Bun.spawn(["bash", "-c", actualCommand], {
       cwd: this.cwd,
       stdout: "pipe",
       stderr: "pipe",
@@ -41,9 +46,21 @@ export class ScopedBashTool implements BashTool {
     ]);
     const exitCode = await proc.exited;
 
-    // Update working directory if command succeeded and might have changed it
+    // Update working directory if command succeeded and was a directory change
     if (exitCode === 0 && this.isDirectoryChangeCommand(command)) {
-      await this.updateWorkingDirectory(command);
+      const newCwd = stdout.trim().split('\n').pop() || this.cwd;
+      // Only update if the new directory is within our repo scope
+      if (newCwd.startsWith(this.repoPath)) {
+        this.cwd = newCwd;
+        // Remove the pwd output from stdout for the original command
+        const lines = stdout.trim().split('\n');
+        const originalOutput = lines.slice(0, -1).join('\n');
+        return {
+          stdout: truncateString(originalOutput, 100_000),
+          stderr: truncateString(stderr, 50_000),
+          exitCode,
+        };
+      }
     }
 
     return {
@@ -56,30 +73,5 @@ export class ScopedBashTool implements BashTool {
   private isDirectoryChangeCommand(command: string): boolean {
     const trimmed = command.trim();
     return trimmed.startsWith("cd ") || trimmed === "cd";
-  }
-
-  private async updateWorkingDirectory(command: string): Promise<void> {
-    // Execute pwd in the same context to get the actual new directory
-    const pwdProc = Bun.spawn(["bash", "-c", `${command} && pwd`], {
-      cwd: this.cwd,
-      stdout: "pipe",
-      stderr: "pipe",
-      timeout: 5000,
-      env: {
-        HOME: this.repoPath,
-        PATH: process.env["PATH"] ?? "/usr/bin:/bin:/usr/local/bin",
-      },
-    });
-
-    const stdout = await new Response(pwdProc.stdout).text();
-    const exitCode = await pwdProc.exited;
-
-    if (exitCode === 0) {
-      const newCwd = stdout.trim();
-      // Only update if the new directory is within our repo scope
-      if (newCwd.startsWith(this.repoPath)) {
-        this.cwd = newCwd;
-      }
-    }
   }
 }
