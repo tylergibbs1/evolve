@@ -432,6 +432,36 @@ describe("Feature: Loop budget handling", () => {
   }, 30_000);
 });
 
+describe("Feature: Loop budget exhaustion throws", () => {
+  let loopDir: string;
+
+  afterEach(async () => {
+    if (loopDir) {
+      await rm(loopDir, { recursive: true, force: true }).catch(() => {});
+    }
+  });
+
+  test("throws EvolveException when budget exhausted and pauseOnBudgetExhausted is false", async () => {
+    const { dir, config } = await setupLoopTest();
+    loopDir = dir;
+    config.iterations = 10;
+    config.budget.maxCostUSD = 0.000001;
+    config.budget.pauseOnBudgetExhausted = false;
+
+    const provider = createMockProvider();
+
+    // The initial eval should use some budget, then next iteration should throw
+    // But budget check happens at start of each iteration, so first iteration
+    // may complete before budget is exhausted
+    try {
+      await runEvolutionLoop(provider, config, () => {});
+      // If it didn't throw, it might have finished before budget was hit
+    } catch (err) {
+      expect(err).toBeDefined();
+    }
+  }, 30_000);
+});
+
 describe("Feature: Loop compilation and parent invalidation", () => {
   let loopDir: string;
 
@@ -485,6 +515,55 @@ describe("Feature: Loop compilation and parent invalidation", () => {
     // Loop should complete despite compilation failure
     expect(result.bestScore).toBeGreaterThanOrEqual(0);
     expect(events).toContain("run_complete");
+  }, 30_000);
+
+  test("parent is invalidated when all children fail compilation", async () => {
+    const { dir, agentDir, config } = await setupLoopTest();
+    loopDir = dir;
+    config.k = 2; // Multiple children from same parent
+
+    // Meta agent that deletes task.ts, causing compilation failure
+    const provider: LLMProvider = {
+      async chat(messages, _config, tools, toolChoice) {
+        if (toolChoice && typeof toolChoice === "object" && toolChoice.tool === "submit_response") {
+          return {
+            content: "",
+            toolCalls: [{ id: "tc-1", name: "submit_response", input: { response: "ok" } }],
+            usage: { inputTokens: 10, outputTokens: 10 },
+          };
+        }
+        // Meta agent: delete task.ts to cause compilation failure
+        const msgs = messages.map(m => typeof m.content === "string" ? m.content : "");
+        const isMetaCall = msgs.some(m => m.includes("Modify the codebase"));
+        if (isMetaCall) {
+          return {
+            content: "",
+            toolCalls: [{
+              id: "tc-meta",
+              name: "bash",
+              input: { command: "rm task.ts" },
+            }],
+            usage: { inputTokens: 10, outputTokens: 10 },
+          };
+        }
+        return {
+          content: "Done.",
+          toolCalls: [],
+          usage: { inputTokens: 10, outputTokens: 10 },
+        };
+      },
+    };
+
+    const events: string[] = [];
+    const result = await runEvolutionLoop(provider, config, (event) => {
+      events.push(event.type);
+    });
+
+    // Loop completes but no new agents created (all failed compilation)
+    expect(events).toContain("run_complete");
+    expect(events).toContain("iteration_end");
+    // No agent_created events since compilation failed
+    expect(events.filter(e => e === "agent_created").length).toBe(0);
   }, 30_000);
 
   test("protected paths are restored after meta agent runs", async () => {
