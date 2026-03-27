@@ -48,6 +48,9 @@ export class ScopedBashTool implements BashTool {
   }
 }
 
+/**
+ * Truncate string to maxLen characters, adding truncation notice.
+ */
 function truncate(str: string, maxLen: number): string {
   if (str.length <= maxLen) return str;
   return str.slice(0, maxLen) + `\n... (truncated, ${str.length - maxLen} chars omitted)`;
