@@ -73,9 +73,9 @@ async function readSourceFiles(): Promise<string> {
     }
   }
 
-  await walk(join(ROOT, "packages/core/src"));
-  await walk(join(ROOT, "packages/cli/src"));
-  await walk(join(ROOT, "packages/initial-agent"));
+  await walk(join(ROOT, "packages/core/src"), "packages/core/src");
+  await walk(join(ROOT, "packages/cli/src"), "packages/cli/src");
+  await walk(join(ROOT, "packages/initial-agent"), "packages/initial-agent");
   return files.join("\n\n");
 }
 
@@ -95,7 +95,7 @@ async function readTestFiles(): Promise<string> {
       }
     }
   }
-  await walk(join(ROOT, "packages/core/src"));
+  await walk(join(ROOT, "packages/core/src"), "packages/core/src");
   return files.join("\n\n");
 }
 
