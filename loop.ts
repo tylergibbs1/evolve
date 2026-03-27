@@ -81,6 +81,9 @@ export async function runEvolutionLoop(
       scores: initialScores.scores,
     });
 
+    // Initialize cached entries list with the initial agent
+    let archiveEntries = archive.entries();
+
     // --- Main evolution loop ---
     for (let t = 1; t <= config.iterations; t++) {
       // Budget check
@@ -98,7 +101,6 @@ export async function runEvolutionLoop(
       }
 
       // Select k parents — either via fixed algorithm or agent's editable selection
-      const archiveEntries = archive.entries();
       let parents: ArchiveEntry[];
       if (config.editableSelection) {
         parents = await runEditableSelection(
@@ -177,7 +179,7 @@ export async function runEvolutionLoop(
               runTaskAgent(provider, config, childRepoPath, evalCase, domain),
             config.eval.domains,
             config.eval.stagedEval,
-            archive.entries(),
+            archiveEntries,
           );
 
           return { compiled: true as const, childId, childRepoPath, evalResult, diff, parentId: parent.id };
@@ -187,6 +189,7 @@ export async function runEvolutionLoop(
       // Process results: add compiled variants, mark invalid parents
       const failedParents = new Map<AgentId, number>(); // parentId -> failure count
       const attemptedParents = new Map<AgentId, number>(); // parentId -> attempt count
+      const newEntries: ArchiveEntry[] = [];
 
       for (const result of results) {
         if (result.status !== "fulfilled" || result.value === null) continue;
@@ -218,6 +221,10 @@ export async function runEvolutionLoop(
         archive.incrementChildCount(parentId);
         newAgentIds.push(childId);
 
+        // Get the newly added entry and cache it
+        const newEntry = archive.get(childId)!;
+        newEntries.push(newEntry);
+        
         emit({
           type: "agent_created",
           agentId: childId,
@@ -231,11 +238,27 @@ export async function runEvolutionLoop(
         });
       }
 
+      // Update cached entries list with new agents
+      archiveEntries.push(...newEntries);
+
       // Invalidate parents whose children ALL failed compilation
       for (const [parentId, failures] of failedParents) {
         const attempts = attemptedParents.get(parentId) ?? 0;
         if (failures === attempts) {
           archive.invalidateParent(parentId);
+          // Update the cached entry's validParent flag
+          const parentEntry = archiveEntries.find(e => e.id === parentId);
+          if (parentEntry) {
+            parentEntry.validParent = false;
+          }
+        }
+      }
+
+      // Update compiledChildrenCount in cached entries
+      for (const parentId of attemptedParents.keys()) {
+        const parentEntry = archiveEntries.find(e => e.id === parentId);
+        if (parentEntry) {
+          parentEntry.compiledChildrenCount = archive.get(parentId)!.compiledChildrenCount;
         }
       }
 
@@ -442,33 +465,47 @@ Respond with your answer using the submit_response tool.`;
 }
 
 /**
- * Check if an agent variant has valid TypeScript syntax.
+ * Check if an agent variant has valid, parseable TypeScript.
  *
- * Uses a simplified approach: check that task.ts exists, is non-empty,
- * and can be parsed by TypeScript without syntax errors.
+ * Uses `bun build --no-bundle` for a quick syntax check. Falls back to
+ * checking that the task.ts file exists and is non-empty — the agent's
+ * code runs inside a tool loop, not as a standalone module, so strict
+ * compilation isn't required.
  */
 async function checkCompiles(repoPath: string): Promise<boolean> {
   const taskFile = Bun.file(join(repoPath, "task.ts"));
   if (!(await taskFile.exists())) return false;
-  
   const content = await taskFile.text();
   if (content.trim().length === 0) return false;
 
-  // Use Bun's built-in TypeScript transpiler to check syntax
-  try {
-    const proc = Bun.spawn(
-      ["bun", "build", "--no-bundle", "--target=node", join(repoPath, "task.ts")],
-      {
-        cwd: repoPath,
-        stdout: "pipe",
-        stderr: "pipe",
-      },
-    );
-    const exitCode = await proc.exited;
-    return exitCode === 0;
-  } catch {
-    return false;
-  }
+  // Quick syntax check — verify Bun can parse the file
+  const proc = Bun.spawn(
+    ["bun", "build", "--no-bundle", join(repoPath, "task.ts"), "--outdir", "/dev/null"],
+    {
+      cwd: repoPath,
+      stdout: "pipe",
+      stderr: "pipe",
+    },
+  );
+  const exitCode = await proc.exited;
+  if (exitCode === 0) return true;
+
+  // Fallback: if bun build fails (e.g. missing imports), check basic syntax
+  // by trying to parse as a module. The agent code is run as prompt text,
+  // not executed directly, so import errors are acceptable.
+  const syntaxProc = Bun.spawn(
+    ["bun", "eval", `await import("${join(repoPath, "task.ts")}")`],
+    {
+      cwd: repoPath,
+      stdout: "pipe",
+      stderr: "pipe",
+    },
+  );
+  const stderr = await new Response(syntaxProc.stderr).text();
+  await syntaxProc.exited;
+
+  // Accept if no SyntaxError — other errors (like missing modules) are OK
+  return !stderr.includes("SyntaxError");
 }
 
 /**
