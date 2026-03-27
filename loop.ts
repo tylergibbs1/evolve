@@ -234,7 +234,7 @@ export async function runEvolutionLoop(
       // Invalidate parents whose children ALL failed compilation
       for (const [parentId, failures] of failedParents) {
         const attempts = attemptedParents.get(parentId) ?? 0;
-        if (failures === attempts && attempts > 0) {
+        if (failures === attempts) {
           archive.invalidateParent(parentId);
         }
       }
