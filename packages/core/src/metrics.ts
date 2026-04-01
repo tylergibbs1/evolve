@@ -1,5 +1,5 @@
 import type { ArchiveEntry, AgentId } from "./types.ts";
-import { getAverageScore } from "./selection.ts";
+import { getAverageScoreForMode, type ScoreSelectionMode } from "./selection.ts";
 
 /**
  * improvement@k metric (Appendix D.3).
@@ -13,19 +13,29 @@ export function improvementAtK(
   archive: readonly ArchiveEntry[],
   initialAgentId: AgentId,
   k: number,
+  scoreMode: ScoreSelectionMode = "validation",
 ): number {
   const initial = archive.find((e) => e.id === initialAgentId);
   if (!initial) return 0;
 
-  const initialScore = getAverageScore(initial);
+  const initialScore = getAverageScoreForMode(initial, scoreMode);
+  const byId = new Map(archive.map((entry) => [entry.id, entry]));
 
-  // Get the k agents produced within k generations from the initial
+  // Restrict to descendants of the specified initial agent that are reachable
+  // within k modification steps, matching the paper's A^(k) definition.
   const descendants = archive
-    .filter((e) => e.generation <= k && e.id !== initialAgentId)
-    .sort((a, b) => getAverageScore(b) - getAverageScore(a));
+    .filter((entry) => {
+      if (entry.id === initialAgentId) return false;
+      const distance = getLineageDistance(initialAgentId, entry.id, byId);
+      return distance !== null && distance <= k;
+    })
+    .sort(
+      (a, b) =>
+        getAverageScoreForMode(b, scoreMode) - getAverageScoreForMode(a, scoreMode),
+    );
 
   const bestDescendantScore = descendants[0]
-    ? getAverageScore(descendants[0])
+    ? getAverageScoreForMode(descendants[0], scoreMode)
     : initialScore;
 
   return bestDescendantScore - initialScore;
@@ -60,8 +70,8 @@ export function scoreProgression(
   let runningBest = -Infinity;
 
   for (let gen = 0; gen <= maxGen; gen++) {
-    const entries = byGen.get(gen) ?? [];
-    const scores = entries.map(getAverageScore);
+      const entries = byGen.get(gen) ?? [];
+    const scores = entries.map((entry) => getAverageScoreForMode(entry));
     const genBest = scores.length > 0 ? Math.max(...scores) : runningBest;
     runningBest = Math.max(runningBest, genBest);
 
@@ -88,7 +98,25 @@ export function lineageTree(
   return archive.map((e) => ({
     id: e.id,
     parentId: e.parentId,
-    score: getAverageScore(e),
+    score: getAverageScoreForMode(e),
     generation: e.generation,
   }));
+}
+
+function getLineageDistance(
+  ancestorId: AgentId,
+  descendantId: AgentId,
+  byId: Map<AgentId, ArchiveEntry>,
+): number | null {
+  let current = byId.get(descendantId);
+  let distance = 0;
+
+  while (current) {
+    if (current.id === ancestorId) return distance;
+    if (current.parentId === null) return null;
+    current = byId.get(current.parentId);
+    distance++;
+  }
+
+  return null;
 }

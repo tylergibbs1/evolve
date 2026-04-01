@@ -120,4 +120,22 @@ describe("Archive", () => {
     expect(summary.averageScore).toBe(0.5);
     expect(summary.topAgents.length).toBe(2);
   });
+
+  test("topK and summary honor training score mode", async () => {
+    await setup();
+    const dummyRepo = join(testDir, "dummy-agent");
+
+    await archive.add(agentId("train-best"), null, 0, dummyRepo, [
+      { domain: "test", trainScore: 0.9, validationScore: 0.2, testScore: null },
+    ], "");
+    await archive.add(agentId("val-best"), null, 0, dummyRepo, [
+      { domain: "test", trainScore: 0.1, validationScore: 0.95, testScore: null },
+    ], "");
+
+    const top = archive.topK(1, "training");
+    const summary = archive.summary("training");
+
+    expect(top[0]!.id).toBe(agentId("train-best"));
+    expect(summary.bestScore).toBe(0.9);
+  });
 });

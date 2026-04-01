@@ -8,7 +8,7 @@ import {
   type DomainScore,
   agentId,
 } from "./types.ts";
-import { getAverageScore } from "./selection.ts";
+import { getAverageScoreForMode, type ScoreSelectionMode } from "./selection.ts";
 
 /**
  * Archive backed by bun:sqlite.
@@ -137,9 +137,14 @@ export class Archive {
   }
 
   /** Get the top-k agents by average score. */
-  topK(k: number): ArchiveEntry[] {
+  topK(k: number, scoreMode: ScoreSelectionMode = "validation"): ArchiveEntry[] {
     const all = this.entries();
-    return all.sort((a, b) => getAverageScore(b) - getAverageScore(a)).slice(0, k);
+    return all
+      .sort(
+        (a, b) =>
+          getAverageScoreForMode(b, scoreMode) - getAverageScoreForMode(a, scoreMode),
+      )
+      .slice(0, k);
   }
 
   /** Get the current size of the archive. */
@@ -151,15 +156,16 @@ export class Archive {
   }
 
   /** Generate a summary for the meta agent (no internal details exposed). */
-  summary(): ArchiveSummary {
+  summary(scoreMode: ScoreSelectionMode = "validation"): ArchiveSummary {
     const all = this.entries();
     if (all.length === 0) {
       return { totalAgents: 0, bestScore: 0, averageScore: 0, topAgents: [] };
     }
 
-    const avgScores = all.map(getAverageScore);
+    const avgScores = all.map((entry) => getAverageScoreForMode(entry, scoreMode));
     const sorted = [...all].sort(
-      (a, b) => getAverageScore(b) - getAverageScore(a),
+      (a, b) =>
+        getAverageScoreForMode(b, scoreMode) - getAverageScoreForMode(a, scoreMode),
     );
 
     return {
@@ -168,7 +174,7 @@ export class Archive {
       averageScore: avgScores.reduce((a, b) => a + b, 0) / avgScores.length,
       topAgents: sorted.slice(0, 5).map((e) => ({
         id: e.id,
-        score: getAverageScore(e),
+        score: getAverageScoreForMode(e, scoreMode),
         generation: e.generation,
       })),
     };

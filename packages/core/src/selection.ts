@@ -1,4 +1,6 @@
-import type { AgentId, ArchiveEntry, DomainScore } from "./types.ts";
+import type { AgentId, ArchiveEntry, EvalConfig } from "./types.ts";
+
+export type ScoreSelectionMode = EvalConfig["parentSelectionScore"];
 
 /**
  * Parent selection matching Appendix A.2 of the HyperAgents paper.
@@ -15,9 +17,9 @@ import type { AgentId, ArchiveEntry, DomainScore } from "./types.ts";
 export function selectParents(
   archive: readonly ArchiveEntry[],
   count: number,
-  opts: { topM?: number; lambda?: number } = {},
+  opts: { topM?: number; lambda?: number; scoreMode?: ScoreSelectionMode } = {},
 ): ArchiveEntry[] {
-  const { topM = 3, lambda = 10 } = opts;
+  const { topM = 3, lambda = 10, scoreMode = "validation" } = opts;
 
   // Filter to valid parents only; fall back to full archive if all invalid
   const eligible = archive.filter((e) => e.validParent);
@@ -32,15 +34,18 @@ export function selectParents(
 
   // Step 1: Dynamic midpoint from top-m scores
   const sorted = [...pool].sort(
-    (a, b) => getAverageScore(b) - getAverageScore(a),
+    (a, b) =>
+      getAverageScoreForMode(b, scoreMode) - getAverageScoreForMode(a, scoreMode),
   );
   const effectiveM = Math.min(topM, sorted.length);
-  const topScores = sorted.slice(0, effectiveM).map(getAverageScore);
+  const topScores = sorted
+    .slice(0, effectiveM)
+    .map((entry) => getAverageScoreForMode(entry, scoreMode));
   const alphaMid = topScores.reduce((a, b) => a + b, 0) / effectiveM;
 
   // Step 2-4: Sigmoid + novelty bonus per agent
   const weights = pool.map((entry) => {
-    const score = getAverageScore(entry);
+    const score = getAverageScoreForMode(entry, scoreMode);
     const sigmoid = 1 / (1 + Math.exp(-lambda * (score - alphaMid)));
     const novelty = 1 / (1 + entry.compiledChildrenCount);
     return sigmoid * novelty;
@@ -62,10 +67,18 @@ export function selectParents(
  * Multi-domain: parent selection uses the average (Appendix A.4).
  */
 export function getAverageScore(entry: ArchiveEntry): number {
+  return getAverageScoreForMode(entry, "validation");
+}
+
+export function getAverageScoreForMode(
+  entry: ArchiveEntry,
+  scoreMode: ScoreSelectionMode = "validation",
+): number {
   if (entry.scores.length === 0) return 0;
-  const scores = entry.scores.map((s) =>
-    s.validationScore !== null ? s.validationScore : s.trainScore,
-  );
+  const scores = entry.scores.map((s) => {
+    if (scoreMode === "training") return s.trainScore;
+    return s.validationScore !== null ? s.validationScore : s.trainScore;
+  });
   return scores.reduce((a, b) => a + b, 0) / scores.length;
 }
 
@@ -118,11 +131,11 @@ export function selectTransferAgent(
     const descendants = getDescendants(candidate.id, archive, byId);
     if (descendants.length < minDescendants) continue;
 
-    const candidateScore = getAverageScore(candidate);
+    const candidateScore = getAverageScoreForMode(candidate);
     let growthScore = 0;
 
     for (const desc of descendants) {
-      const improvement = getAverageScore(desc) - candidateScore;
+      const improvement = getAverageScoreForMode(desc) - candidateScore;
       const distance = getDistance(candidate.id, desc.id, byId);
       growthScore += improvement * Math.pow(gamma, distance);
     }

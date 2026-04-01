@@ -229,9 +229,9 @@ describe("evaluateAgent", () => {
       [],
     );
 
-    // Stage 1 should pass (at least one success), then stage 2 evaluates more
-    // Total score depends on shuffle order, but should be > 0
-    expect(result.scores[0]!.trainScore).toBeGreaterThanOrEqual(0);
+    // Stage 1 should pass on the first fixed subset, then stage 2 evaluates all 5.
+    expect(callCount).toBe(5);
+    expect(result.scores[0]!.trainScore).toBeCloseTo(0.2);
   });
 
   test("three-tier staged evaluation", async () => {
@@ -465,5 +465,111 @@ describe("evaluateAgent", () => {
 
     // Both cases should get 0.7
     expect(result.scores[0]!.trainScore).toBe(0.7);
+  });
+
+  test("evaluation uses fixed training case order across runs", async () => {
+    const domain = makeDomain("ordered", 4);
+    const staged: StagedEvalConfig = {
+      stages: [{ taskCount: 2, passThreshold: 0, passCondition: "any" }],
+      defaultScore: 0,
+    };
+
+    const seen: string[] = [];
+    const runTask = async (evalCase: { id: string }) => {
+      seen.push(evalCase.id);
+      return "wrong";
+    };
+
+    await evaluateAgent(agentId("ordered"), runTask, [domain], staged, []);
+    expect(seen).toEqual(["case-0", "case-1"]);
+  });
+
+  test("archive rank checks honor requested training score mode", async () => {
+    const domain: DomainConfig = {
+      name: "ranked",
+      trainCases: Array.from({ length: 4 }, (_, i) => ({
+        id: `case-${i}`,
+        input: { value: i },
+        expected: { answer: i },
+      })),
+      testCases: [],
+      scorer: async (output: unknown) => Number(output),
+    };
+    const staged: StagedEvalConfig = {
+      stages: [
+        { taskCount: 1, passThreshold: 0, passCondition: "any" },
+        { taskCount: 4, passThreshold: 0, passCondition: "any" },
+      ],
+      defaultScore: 0,
+    };
+
+    const archive = [
+      {
+        id: agentId("strong-train"),
+        parentId: null,
+        generation: 0,
+        repoSnapshot: "/tmp/strong-train",
+        scores: [{ domain: "ranked", trainScore: 0.4, validationScore: 0.9, testScore: null }],
+        compiledChildrenCount: 0,
+        validParent: true,
+        metadata: { createdAt: new Date(), diffFromParent: "" },
+      },
+      {
+        id: agentId("strong-val"),
+        parentId: null,
+        generation: 0,
+        repoSnapshot: "/tmp/strong-val",
+        scores: [{ domain: "ranked", trainScore: 0.3, validationScore: 0.1, testScore: null }],
+        compiledChildrenCount: 0,
+        validParent: true,
+        metadata: { createdAt: new Date(), diffFromParent: "" },
+      },
+    ];
+
+    let trainingCalls = 0;
+    const runTrainingTask = async () => {
+      trainingCalls++;
+      return 0.5;
+    };
+
+    await evaluateAgent(
+      agentId("ranked-agent"),
+      runTrainingTask,
+      [domain],
+      {
+        stages: [
+          staged.stages[0]!,
+          { ...staged.stages[1]!, archiveRankRequired: 1 },
+        ],
+        defaultScore: 0,
+      },
+      archive,
+      "training",
+    );
+
+    expect(trainingCalls).toBe(4);
+
+    let validationCalls = 0;
+    const runValidationTask = async () => {
+      validationCalls++;
+      return 0.5;
+    };
+
+    await evaluateAgent(
+      agentId("ranked-agent"),
+      runValidationTask,
+      [domain],
+      {
+        stages: [
+          staged.stages[0]!,
+          { ...staged.stages[1]!, archiveRankRequired: 1 },
+        ],
+        defaultScore: 0,
+      },
+      archive,
+      "validation",
+    );
+
+    expect(validationCalls).toBe(1);
   });
 });

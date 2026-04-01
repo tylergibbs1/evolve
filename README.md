@@ -13,6 +13,8 @@ The system maintains an archive of self-modifying agent programs. Each agent con
 
 The underlying LLM stays frozen. All gains come from evolving the code that wraps it.
 
+Mechanically, this implementation follows the DGM-H pattern from the paper: archive-based parent selection, code-level self-modification, staged evaluation, and reinsertion of compiled children as future stepping stones. The included `experiment*.ts` files are lightweight framework demos, not reproductions of the paper's published benchmark suites or reported numbers.
+
 ## How it works
 
 ```
@@ -131,7 +133,7 @@ Based on two ICLR 2026 papers:
 |-----------|-------------|
 | **Archive** | SQLite-backed store of every compiled agent variant. No pruning, no minimum score — low-scoring variants serve as stepping stones. |
 | **Parent Selection** | Sigmoid + novelty bonus (Appendix A.2). Balances exploitation of high scorers with exploration of under-sampled agents. |
-| **Staged Evaluation** | Multi-tier: cheap screen → full eval. Only top candidates get expensive evaluation. |
+| **Staged Evaluation** | Multi-tier: fixed ordered screen → full eval. Only top candidates get expensive evaluation. |
 | **Tools** | Agents get exactly 2 tools: `bash` and `editor`. The papers proved these sufficient for agents to build whatever infrastructure they need. |
 | **Structured Outputs** | Optional `outputSchema` on domains uses Anthropic's `output_config.format` to guarantee valid JSON, eliminating format breakage during evolution. |
 | **Per-Case Feedback** | Evaluator populates `EvalFeedback.feedback` with per-case pass/fail diagnostics so the meta agent can make targeted improvements. |
@@ -167,19 +169,35 @@ packages/
 
 ## Key design decisions
 
-**Matches the papers:**
+**Matches the papers at the mechanism level:**
 - Initial agent is minimal — single LLM call for task, "modify the codebase" for meta
 - Archive keeps everything — no pruning, no minimum score threshold
 - Parent selection is fixed by default (configurable to editable)
+- `parentSelectionScore` is honored end-to-end (`"validation"` or `"training"`)
 - Evaluation is hidden — agent sees scores only, never scoring implementation
 - k parallel parents per iteration
 - Task agent output uses forced tool calls for structured JSON (no parsing)
 
-**Diverges from the papers:**
+**Diverges from the papers in implementation and experiment setup:**
 - TypeScript on Bun instead of Python (Bun runs .ts natively, zero build step)
 - Anthropic SDK with `tool_choice` for structured output instead of regex parsing; optional `output_config.format` for schema-constrained responses
 - Per-case evaluation feedback threaded through to the meta agent
 - Four new features from HyperAgents analysis: invalid parent marking, protected paths, editable selection, structured outputs
+- Experiment helpers are framework demos, not reproductions of the paper's published benchmark suites
+
+## What This Proves
+
+This repo demonstrates that the agent actually evolves in the DGM-H sense:
+- parent agents are sampled from an archive
+- the meta agent edits agent code, not just prompts in memory
+- compiled children are evaluated and archived
+- later generations can branch from earlier stepping stones
+
+What it does **not** prove by itself:
+- the exact quantitative results reported in HyperAgents
+- apples-to-apples comparisons with the paper's domains, models, budgets, or transfer experiments
+
+To claim reproduction of the paper's results, you would still need to recreate the paper's task suites, evaluation protocols, model choices, iteration counts, and analysis pipeline.
 
 ## Configuration
 

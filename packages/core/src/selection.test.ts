@@ -2,6 +2,7 @@ import { test, expect, describe } from "bun:test";
 import {
   selectParents,
   getAverageScore,
+  getAverageScoreForMode,
   selectTransferAgent,
 } from "./selection.ts";
 import type { ArchiveEntry } from "./types.ts";
@@ -43,6 +44,13 @@ describe("getAverageScore", () => {
     const entry = makeEntry("a", 0.5);
     entry.scores[0]!.validationScore = 0.8;
     expect(getAverageScore(entry)).toBe(0.8);
+  });
+
+  test("supports forcing training score when configured", () => {
+    const entry = makeEntry("a", 0.5);
+    entry.scores[0]!.validationScore = 0.8;
+    expect(getAverageScoreForMode(entry, "training")).toBe(0.5);
+    expect(getAverageScoreForMode(entry, "validation")).toBe(0.8);
   });
 
   test("averages across multiple domains", () => {
@@ -112,6 +120,23 @@ describe("selectParents", () => {
     }
     // Fresh agent should get a meaningful share despite lower score
     expect(counts.get("fresh")!).toBeGreaterThan(200);
+  });
+
+  test("scoreMode training ignores validation scores", () => {
+    const archive = [
+      makeEntry("train-best", 0.9),
+      makeEntry("val-best", 0.1),
+    ];
+    archive[0]!.scores[0]!.validationScore = 0.2;
+    archive[1]!.scores[0]!.validationScore = 0.95;
+
+    const counts = new Map<string, number>();
+    for (let i = 0; i < 1000; i++) {
+      const [parent] = selectParents(archive, 1, { scoreMode: "training" });
+      counts.set(parent!.id, (counts.get(parent!.id) ?? 0) + 1);
+    }
+
+    expect(counts.get("train-best")!).toBeGreaterThan(counts.get("val-best")!);
   });
 });
 

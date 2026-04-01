@@ -38,6 +38,26 @@ describe("improvementAtK", () => {
     // k=5: gen5 included
     expect(improvementAtK(archive, agentId("init"), 5)).toBeCloseTo(0.7); // 0.9 - 0.2
   });
+
+  test("ignores non-descendants even if they appear within k generations", () => {
+    const archive = [
+      makeEntry("init", 0.2, 0),
+      makeEntry("gen1", 0.4, 1, "init"),
+      makeEntry("sibling-root", 0.95, 1, null),
+    ];
+
+    expect(improvementAtK(archive, agentId("init"), 2)).toBeCloseTo(0.2);
+  });
+
+  test("uses lineage distance rather than absolute generation", () => {
+    const archive = [
+      makeEntry("other-root", 0.1, 0),
+      makeEntry("init", 0.2, 3, null),
+      makeEntry("child", 0.9, 4, "init"),
+    ];
+
+    expect(improvementAtK(archive, agentId("init"), 1)).toBeCloseTo(0.7);
+  });
 });
 
 describe("improvementAtK edge cases", () => {

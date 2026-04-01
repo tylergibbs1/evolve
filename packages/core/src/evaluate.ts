@@ -7,7 +7,7 @@ import type {
   EvalFeedback,
   StagedEvalConfig,
 } from "./types.ts";
-import { getAverageScore } from "./selection.ts";
+import { getAverageScoreForMode, type ScoreSelectionMode } from "./selection.ts";
 
 /**
  * Multi-tier staged evaluation framework.
@@ -25,6 +25,7 @@ export async function evaluateAgent(
   domains: DomainConfig[],
   stagedEval: StagedEvalConfig,
   archive: readonly ArchiveEntry[],
+  scoreMode: ScoreSelectionMode = "validation",
 ): Promise<{ scores: DomainScore[]; feedback: EvalFeedback[] }> {
   const scores: DomainScore[] = [];
   const feedback: EvalFeedback[] = [];
@@ -36,6 +37,7 @@ export async function evaluateAgent(
       domain,
       stagedEval,
       archive,
+      scoreMode,
     );
     scores.push(result.score);
     feedback.push(result.feedback);
@@ -50,9 +52,10 @@ async function evaluateDomain(
   domain: DomainConfig,
   config: StagedEvalConfig,
   archive: readonly ArchiveEntry[],
+  scoreMode: ScoreSelectionMode,
 ): Promise<{ score: DomainScore; feedback: EvalFeedback }> {
+  // Preserve the declared task order so staged screening is deterministic.
   const trainCases = [...domain.trainCases];
-  shuffle(trainCases);
 
   let evaluatedCount = 0;
   let totalScore = 0;
@@ -64,12 +67,13 @@ async function evaluateDomain(
     // Check archive rank requirement
     if (stage.archiveRankRequired !== undefined) {
       const sorted = [...archive].sort(
-        (a, b) => getAverageScore(b) - getAverageScore(a),
+        (a, b) =>
+          getAverageScoreForMode(b, scoreMode) - getAverageScoreForMode(a, scoreMode),
       );
       const currentScore =
         evaluatedCount > 0 ? totalScore / evaluatedCount : 0;
       const rank = sorted.filter(
-        (e) => getAverageScore(e) > currentScore,
+        (e) => getAverageScoreForMode(e, scoreMode) > currentScore,
       ).length;
       if (rank >= stage.archiveRankRequired) {
         break; // Not in top-N, skip remaining stages
@@ -163,12 +167,4 @@ async function evaluateDomain(
       feedback: feedbackLines.length > 0 ? feedbackLines.join(". ") : undefined,
     },
   };
-}
-
-/** Fisher-Yates shuffle (in-place). */
-function shuffle<T>(arr: T[]): void {
-  for (let i = arr.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [arr[i], arr[j]] = [arr[j]!, arr[i]!];
-  }
 }

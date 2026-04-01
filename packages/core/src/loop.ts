@@ -6,7 +6,7 @@ import { buildMetaPrompt } from "./feedback.ts";
 import { BudgetTracker } from "./llm/budget.ts";
 import type { LLMProvider } from "./llm/provider.ts";
 import { runToolLoop } from "./llm/provider.ts";
-import { selectParents, getAverageScore } from "./selection.ts";
+import { selectParents, getAverageScoreForMode } from "./selection.ts";
 import { ScopedBashTool } from "./tools/bash.ts";
 import { ScopedEditorTool, executeEditorCommand } from "./tools/editor.ts";
 import { ALL_TOOL_DEFINITIONS } from "./tools/interface.ts";
@@ -71,6 +71,7 @@ export async function runEvolutionLoop(
       config.eval.domains,
       config.eval.stagedEval,
       [],
+      config.eval.parentSelectionScore,
     );
 
     await archive.add(
@@ -118,6 +119,7 @@ export async function runEvolutionLoop(
         parents = selectParents(archiveEntries, config.k, {
           topM: config.topM,
           lambda: config.lambda,
+          scoreMode: config.eval.parentSelectionScore,
         });
       }
       const parentIds = parents.map((p) => p.id);
@@ -152,7 +154,7 @@ export async function runEvolutionLoop(
             config,
             childRepoPath,
             evalHistory,
-            archive.summary(),
+            archive.summary(config.eval.parentSelectionScore),
             config.iterations - t,
           );
           budget.recordUsage(
@@ -188,6 +190,7 @@ export async function runEvolutionLoop(
             config.eval.domains,
             config.eval.stagedEval,
             archive.entries(),
+            config.eval.parentSelectionScore,
           );
 
           return { compiled: true as const, childId, childRepoPath, evalResult, diff, parentId: parent.id };
@@ -266,9 +269,11 @@ export async function runEvolutionLoop(
     }
 
     // --- Return best agent ---
-    const best = archive.topK(1)[0];
+    const best = archive.topK(1, config.eval.parentSelectionScore)[0];
     const bestId = best?.id ?? initialId;
-    const bestScore = best ? getAverageScore(best) : 0;
+    const bestScore = best
+      ? getAverageScoreForMode(best, config.eval.parentSelectionScore)
+      : 0;
 
     emit({
       type: "run_complete",
@@ -582,13 +587,16 @@ async function runEditableSelection(
 ): Promise<ArchiveEntry[]> {
   // Find the best agent's repo to source the selection script from
   const bestAgent = [...archive].sort(
-    (a, b) => getAverageScore(b) - getAverageScore(a),
+    (a, b) =>
+      getAverageScoreForMode(b, config.eval.parentSelectionScore) -
+      getAverageScoreForMode(a, config.eval.parentSelectionScore),
   )[0];
 
   if (!bestAgent) {
     return selectParents(archive, count, {
       topM: config.topM,
       lambda: config.lambda,
+      scoreMode: config.eval.parentSelectionScore,
     });
   }
 
@@ -599,6 +607,7 @@ async function runEditableSelection(
     return selectParents(archive, count, {
       topM: config.topM,
       lambda: config.lambda,
+      scoreMode: config.eval.parentSelectionScore,
     });
   }
 
@@ -638,6 +647,7 @@ async function runEditableSelection(
       return selectParents(archive, count, {
         topM: config.topM,
         lambda: config.lambda,
+        scoreMode: config.eval.parentSelectionScore,
       });
     }
 
@@ -652,6 +662,7 @@ async function runEditableSelection(
       return selectParents(archive, count, {
         topM: config.topM,
         lambda: config.lambda,
+        scoreMode: config.eval.parentSelectionScore,
       });
     }
 
@@ -666,6 +677,7 @@ async function runEditableSelection(
     return selectParents(archive, count, {
       topM: config.topM,
       lambda: config.lambda,
+      scoreMode: config.eval.parentSelectionScore,
     });
   }
 }
